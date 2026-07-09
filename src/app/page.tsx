@@ -22,32 +22,57 @@ const nav = [
 
 type NavId = (typeof nav)[number]["id"];
 
-function Badge({
+function Chip({
   children,
   tone = "neutral",
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "good" | "warn" | "bad";
+  tone?: "neutral" | "good" | "warn" | "bad" | "solid";
 }) {
-  const map = {
-    neutral: "border-zinc-700 text-zinc-300",
-    good: "border-emerald-500/40 text-emerald-400",
-    warn: "border-yellow-500/40 text-yellow-400",
-    bad: "border-red-500/40 text-red-400",
+  const styles = {
+    neutral: "border-neutral-800 bg-neutral-950 text-neutral-400",
+    good: "border-emerald-500/25 bg-emerald-500/5 text-emerald-400",
+    warn: "border-yellow-500/25 bg-yellow-500/5 text-yellow-400",
+    bad: "border-red-500/25 bg-red-500/5 text-red-400",
+    solid: "border-transparent bg-white text-black",
   };
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] tracking-wide ${map[tone]}`}
+      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-wide ${styles[tone]}`}
     >
       {children}
     </span>
   );
 }
 
-function statusTone(s: DraftStatus) {
+function toneForStatus(s: DraftStatus) {
   if (s === "approved" || s === "posted") return "good" as const;
   if (s === "rejected") return "bad" as const;
   return "warn" as const;
+}
+
+function Panel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-lg border border-neutral-900 bg-[#0a0a0a] ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
+      {children}
+    </div>
+  );
 }
 
 export default function MissionControlPage() {
@@ -57,198 +82,254 @@ export default function MissionControlPage() {
     [],
   );
 
+  const titles: Record<NavId, { h: string; s: string }> = {
+    overview: {
+      h: "Overview",
+      s: "Phase, account health, and what needs you.",
+    },
+    areas: {
+      h: "Content areas",
+      s: "Factory lanes. Core first, growth second.",
+    },
+    drafts: {
+      h: "Draft queue",
+      s: "Approve before anything hits X.",
+    },
+    week: {
+      h: "This week",
+      s: "Cadence board. Blocked items need capture.",
+    },
+    ops: {
+      h: "Infrastructure",
+      s: "Stack, loops, and operating rules.",
+    },
+  };
+
   return (
-    <div className="min-h-screen bg-black text-zinc-50">
-      <div className="mx-auto flex min-h-screen max-w-7xl">
-        {/* Sidebar */}
-        <aside className="hidden w-60 shrink-0 border-r border-zinc-900 p-5 md:block">
-          <div className="mb-10">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+    <div className="min-h-screen bg-black text-neutral-50">
+      <div className="mx-auto flex min-h-screen max-w-[1280px]">
+        {/* Rail */}
+        <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col border-r border-neutral-900 px-4 py-6 md:flex">
+          <div className="px-2">
+            <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-600">
               Solvers
             </div>
-            <div className="mt-1 text-lg font-medium tracking-tight">
+            <div className="mt-1 text-[15px] font-semibold tracking-tight">
               Mission Control
             </div>
-            <div className="mt-1 font-mono text-xs text-zinc-500">
+            <div className="mt-1 font-mono text-[11px] text-neutral-500">
               {account.handle}
             </div>
           </div>
-          <nav className="space-y-1">
-            {nav.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition ${
-                  tab === item.id
-                    ? "bg-white text-black"
-                    : "text-zinc-400 hover:bg-zinc-950 hover:text-zinc-100"
-                }`}
-              >
-                <span>{item.label}</span>
-                {item.id === "drafts" && pending > 0 ? (
-                  <span
-                    className={`rounded-full px-1.5 text-[10px] ${
-                      tab === item.id
-                        ? "bg-black text-white"
-                        : "bg-zinc-800 text-zinc-200"
-                    }`}
-                  >
-                    {pending}
-                  </span>
-                ) : null}
-              </button>
-            ))}
+
+          <nav className="mt-8 flex flex-1 flex-col gap-0.5">
+            {nav.map((item) => {
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] transition-colors ${
+                    active
+                      ? "bg-white font-medium text-black"
+                      : "text-neutral-400 hover:bg-neutral-950 hover:text-neutral-100"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {item.id === "drafts" && pending > 0 ? (
+                    <span
+                      className={`min-w-5 rounded-full px-1.5 text-center text-[10px] font-medium ${
+                        active
+                          ? "bg-black text-white"
+                          : "bg-neutral-800 text-neutral-200"
+                      }`}
+                    >
+                      {pending}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </nav>
-          <div className="mt-10 border-t border-zinc-900 pt-5 text-xs text-zinc-600">
-            <div>Auto-post: OFF</div>
-            <div className="mt-1">Human approve: ON</div>
+
+          <div className="mt-auto space-y-1 border-t border-neutral-900 px-2 pt-4 text-[11px] text-neutral-600">
+            <div className="flex justify-between">
+              <span>Auto-post</span>
+              <span className="text-neutral-400">OFF</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Approve gate</span>
+              <span className="text-neutral-400">ON</span>
+            </div>
           </div>
         </aside>
 
         {/* Main */}
-        <main className="flex-1 p-5 md:p-8">
-          <header className="mb-8 flex flex-col gap-4 border-b border-zinc-900 pb-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                Content factory
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 md:px-8 md:py-8">
+          <header className="mb-7 border-b border-neutral-900 pb-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-600">
+                  Content factory
+                </div>
+                <h1 className="mt-2 text-[28px] font-semibold leading-none tracking-tight">
+                  {titles[tab].h}
+                </h1>
+                <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">
+                  {titles[tab].s}
+                </p>
               </div>
-              <h1 className="mt-2 text-3xl font-medium tracking-tight">
-                {tab === "overview" && "Overview"}
-                {tab === "areas" && "Content areas"}
-                {tab === "drafts" && "Draft queue"}
-                {tab === "week" && "This week"}
-                {tab === "ops" && "Infrastructure"}
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-                {account.bio}
-              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <Chip>Phase · calibración</Chip>
+                <Chip tone="good">xurl · live</Chip>
+                <Chip tone="warn">demo data</Chip>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge>Phase: {account.phase}</Badge>
-              <Badge tone="good">xurl connected</Badge>
-              <Badge tone="warn">demo data + live account snapshot</Badge>
+
+            {/* Mobile nav */}
+            <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1 md:hidden">
+              {nav.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  className={`whitespace-nowrap rounded-md border px-2.5 py-1.5 text-[12px] ${
+                    tab === item.id
+                      ? "border-white bg-white text-black"
+                      : "border-neutral-800 text-neutral-400"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </header>
 
-          {/* Mobile nav */}
-          <div className="mb-6 flex gap-2 overflow-x-auto md:hidden">
-            {nav.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-xs ${
-                  tab === item.id
-                    ? "border-white bg-white text-black"
-                    : "border-zinc-800 text-zinc-400"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
           {tab === "overview" && (
-            <div className="space-y-6">
-              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-5">
+              <section className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
                 {statusCards.map((c) => (
-                  <div
-                    key={c.label}
-                    className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-4"
-                  >
-                    <div className="text-xs text-zinc-500">{c.label}</div>
-                    <div className="mt-2 text-2xl font-medium tracking-tight">
+                  <Panel key={c.label} className="px-3.5 py-3.5">
+                    <div className="text-[11px] text-neutral-500">{c.label}</div>
+                    <div className="mt-1.5 text-[22px] font-semibold tracking-tight">
                       {c.value}
                     </div>
                     {c.hint ? (
-                      <div className="mt-1 text-xs text-zinc-600">{c.hint}</div>
+                      <div className="mt-1 text-[11px] text-neutral-600">
+                        {c.hint}
+                      </div>
                     ) : null}
-                  </div>
+                  </Panel>
                 ))}
               </section>
 
-              <section className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-                  <div className="mb-3 text-sm font-medium">Account</div>
-                  <dl className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-zinc-500">Handle</dt>
-                      <dd className="font-mono">{account.handle}</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-zinc-500">Plan</dt>
-                      <dd>{account.plan}</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-zinc-500">90d goal</dt>
-                      <dd className="text-right text-zinc-300">
-                        {account.objective90d}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-zinc-500">Language</dt>
-                      <dd>{account.language}</dd>
-                    </div>
+              <section className="grid gap-2.5 lg:grid-cols-5">
+                <Panel className="p-4 lg:col-span-2">
+                  <SectionLabel>Account</SectionLabel>
+                  <dl className="space-y-2.5 text-[13px]">
+                    {[
+                      ["Handle", account.handle, true],
+                      ["Plan", account.plan, false],
+                      ["Language", account.language, false],
+                      ["90d", account.objective90d, false],
+                    ].map(([k, v, mono]) => (
+                      <div
+                        key={String(k)}
+                        className="flex items-start justify-between gap-4"
+                      >
+                        <dt className="shrink-0 text-neutral-500">{k}</dt>
+                        <dd
+                          className={`text-right text-neutral-200 ${
+                            mono ? "font-mono text-[12px]" : ""
+                          }`}
+                        >
+                          {v}
+                        </dd>
+                      </div>
+                    ))}
                   </dl>
-                </div>
+                  <p className="mt-4 border-t border-neutral-900 pt-3 text-[12px] leading-relaxed text-neutral-500">
+                    {account.bio}
+                  </p>
+                </Panel>
 
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-                  <div className="mb-3 text-sm font-medium">Diagnosis</div>
-                  <ul className="space-y-2 text-sm text-zinc-400">
-                    <li>
+                <Panel className="p-4 lg:col-span-3">
+                  <SectionLabel>Diagnosis</SectionLabel>
+                  <ul className="space-y-3 text-[13px] leading-relaxed text-neutral-400">
+                    <li className="flex gap-3">
+                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
                       Bio promises agentic ops; recent feed is inconsistent.
+                      Factory closes the bio↔feed gap.
                     </li>
-                    <li>
-                      Gold exists: Hermes vs OpenClaw, Claude one-shot site,
-                      tools that burn accounts.
+                    <li className="flex gap-3">
+                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
+                      Real signal already exists: Hermes vs OpenClaw, Claude
+                      one-shot site, tools that burn accounts.
                     </li>
-                    <li>
-                      Factory must close bio↔feed gap with real cases — not
-                      robotic stacks.
+                    <li className="flex gap-3">
+                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
+                      Ship cases and takes with proof — never robotic stacks.
                     </li>
                   </ul>
-                </div>
+                </Panel>
               </section>
 
-              <section className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="text-sm font-medium">Next actions</div>
-                  <Badge tone="warn">needs Valentin</Badge>
+              <Panel className="p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <SectionLabel>Needs you</SectionLabel>
+                  <Chip tone="warn">owner action</Chip>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-2 md:grid-cols-3">
                   {[
-                    "Approve or rewrite draft: tool burned account",
-                    "Send 1 real Solvers capture (voice/text)",
-                    "Confirm 5 creators LATAM/ES for scout",
+                    {
+                      n: "01",
+                      t: "Approve draft",
+                      d: "Tool that burned the account — SÍ / NO / CAMBIAR",
+                    },
+                    {
+                      n: "02",
+                      t: "Send a capture",
+                      d: "One real Solvers moment (voice or text)",
+                    },
+                    {
+                      n: "03",
+                      t: "Creators list",
+                      d: "5 LATAM/ES handles for mechanism scout",
+                    },
                   ].map((a) => (
                     <div
-                      key={a}
-                      className="rounded-lg border border-zinc-900 bg-black px-3 py-3 text-sm text-zinc-300"
+                      key={a.n}
+                      className="rounded-md border border-neutral-900 bg-black px-3 py-3"
                     >
-                      {a}
+                      <div className="font-mono text-[10px] text-neutral-600">
+                        {a.n}
+                      </div>
+                      <div className="mt-1 text-[13px] font-medium text-neutral-100">
+                        {a.t}
+                      </div>
+                      <div className="mt-1 text-[12px] leading-relaxed text-neutral-500">
+                        {a.d}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </section>
+              </Panel>
             </div>
           )}
 
           {tab === "areas" && (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               {areas.map((area) => (
-                <div
-                  key={area.id}
-                  className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5"
-                >
+                <Panel key={area.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono text-xs text-zinc-500">
+                      <div className="font-mono text-[10px] tracking-wide text-neutral-600">
                         {area.code}
                       </div>
-                      <div className="mt-1 text-base font-medium">
+                      <div className="mt-1 text-[14px] font-medium">
                         {area.name}
                       </div>
                     </div>
-                    <Badge
+                    <Chip
                       tone={
                         area.priority === "core"
                           ? "good"
@@ -258,68 +339,67 @@ export default function MissionControlPage() {
                       }
                     >
                       {area.priority}
-                    </Badge>
+                    </Chip>
                   </div>
-                  <p className="mt-3 text-sm text-zinc-400">
+                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-neutral-400">
                     {area.description}
                   </p>
-                  <div className="mt-4 text-xs text-zinc-600">
-                    Weekly target: {area.weeklyTarget}
+                  <div className="mt-3 border-t border-neutral-900 pt-2.5 text-[11px] text-neutral-600">
+                    Weekly · {area.weeklyTarget}
                   </div>
-                </div>
+                </Panel>
               ))}
             </div>
           )}
 
           {tab === "drafts" && (
-            <div className="space-y-4">
+            <div className="space-y-2.5">
               {drafts.map((d) => (
-                <article
-                  key={d.id}
-                  className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={statusTone(d.status)}>{d.status}</Badge>
-                    <Badge>{d.area}</Badge>
-                    <Badge>{d.language}</Badge>
-                    <span className="text-xs text-zinc-600">{d.updatedAt}</span>
-                  </div>
-                  <h2 className="mt-3 text-lg font-medium tracking-tight">
-                    {d.title}
-                  </h2>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                    {d.preview}
-                  </p>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-4">
-                    <div className="text-xs text-zinc-600">
-                      Source: {d.source}
-                    </div>
-                    <div className="flex gap-2 text-xs">
-                      <span className="rounded-md border border-zinc-800 px-2 py-1 text-zinc-400">
-                        SÍ
-                      </span>
-                      <span className="rounded-md border border-zinc-800 px-2 py-1 text-zinc-400">
-                        NO
-                      </span>
-                      <span className="rounded-md border border-zinc-800 px-2 py-1 text-zinc-400">
-                        CAMBIAR
+                <article key={d.id}>
+                  <Panel className="p-4">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Chip tone={toneForStatus(d.status)}>{d.status}</Chip>
+                      <Chip>{d.area}</Chip>
+                      <Chip>{d.language}</Chip>
+                      <span className="font-mono text-[11px] text-neutral-600">
+                        {d.updatedAt}
                       </span>
                     </div>
-                  </div>
+                    <h2 className="mt-3 text-[16px] font-medium tracking-tight">
+                      {d.title}
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-neutral-400">
+                      {d.preview}
+                    </p>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-900 pt-3">
+                      <div className="text-[11px] text-neutral-600">
+                        Source · {d.source}
+                      </div>
+                      <div className="flex gap-1.5">
+                        {["SÍ", "NO", "CAMBIAR"].map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-md border border-neutral-800 px-2.5 py-1 text-[11px] font-medium text-neutral-400"
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </Panel>
                 </article>
               ))}
-              <p className="text-xs text-zinc-600">
-                v1 demo: approve actions via Telegram. Next: wire buttons to
-                Supabase + xurl publish.
+              <p className="px-1 pt-1 text-[11px] text-neutral-600">
+                v1: approve via Telegram. Next: wire actions → Supabase → xurl.
               </p>
             </div>
           )}
 
           {tab === "week" && (
-            <div className="overflow-hidden rounded-xl border border-zinc-900">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-950 text-xs uppercase tracking-wide text-zinc-500">
-                  <tr>
+            <Panel className="overflow-hidden">
+              <table className="w-full text-left text-[13px]">
+                <thead>
+                  <tr className="border-b border-neutral-900 text-[11px] uppercase tracking-[0.12em] text-neutral-600">
                     <th className="px-4 py-3 font-medium">Day</th>
                     <th className="px-4 py-3 font-medium">Piece</th>
                     <th className="px-4 py-3 font-medium">State</th>
@@ -329,14 +409,14 @@ export default function MissionControlPage() {
                   {weekly.map((w) => (
                     <tr
                       key={w.day + w.item}
-                      className="border-t border-zinc-900"
+                      className="border-b border-neutral-900/80 last:border-0"
                     >
-                      <td className="px-4 py-3 font-mono text-zinc-400">
+                      <td className="px-4 py-3 font-mono text-[12px] text-neutral-500">
                         {w.day}
                       </td>
-                      <td className="px-4 py-3">{w.item}</td>
+                      <td className="px-4 py-3 text-neutral-200">{w.item}</td>
                       <td className="px-4 py-3">
-                        <Badge
+                        <Chip
                           tone={
                             w.state === "pending"
                               ? "warn"
@@ -347,52 +427,46 @@ export default function MissionControlPage() {
                           }
                         >
                           {w.state}
-                        </Badge>
+                        </Chip>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </Panel>
           )}
 
           {tab === "ops" && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-                <div className="mb-3 text-sm font-medium">Connected stack</div>
-                <dl className="space-y-2 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-zinc-500">GitHub</dt>
-                    <dd className="font-mono text-xs">{infra.github}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-zinc-500">Vercel</dt>
-                    <dd className="font-mono text-xs">{infra.vercelAccount}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-zinc-500">Supabase</dt>
-                    <dd className="font-mono text-xs">
-                      {infra.supabaseProject}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-zinc-500">X</dt>
-                    <dd className="font-mono text-xs">{infra.xAccount}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-zinc-500">Hermes vault</dt>
-                    <dd className="font-mono text-xs">{infra.hermesPath}</dd>
-                  </div>
+            <div className="grid gap-2.5 lg:grid-cols-2">
+              <Panel className="p-4">
+                <SectionLabel>Connected stack</SectionLabel>
+                <dl className="space-y-2.5 text-[13px]">
+                  {(
+                    [
+                      ["GitHub", infra.github],
+                      ["Vercel", infra.vercelAccount],
+                      ["Supabase", infra.supabaseProject],
+                      ["X", infra.xAccount],
+                      ["Hermes vault", infra.hermesPath],
+                    ] as const
+                  ).map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-3">
+                      <dt className="text-neutral-500">{k}</dt>
+                      <dd className="font-mono text-[11px] text-neutral-300">
+                        {v}
+                      </dd>
+                    </div>
+                  ))}
                 </dl>
-              </div>
-              <div className="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-                <div className="mb-3 text-sm font-medium">Operating loops</div>
-                <ol className="list-decimal space-y-2 pl-4 text-sm text-zinc-400">
+              </Panel>
+              <Panel className="p-4">
+                <SectionLabel>Operating loops</SectionLabel>
+                <ol className="list-decimal space-y-2.5 pl-4 text-[13px] leading-relaxed text-neutral-400">
                   {processes.map((p) => (
                     <li key={p}>{p}</li>
                   ))}
                 </ol>
-              </div>
+              </Panel>
             </div>
           )}
         </main>

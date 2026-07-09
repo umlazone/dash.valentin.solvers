@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Solvers Mission Control",
-  description: "Content factory + operations board for Solvers / @valentinflrz",
+  title: "Mission Control · Solvers",
+  description:
+    "Content factory ops board for Solvers / @valentinflrz — status, drafts, weekly plan.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="min-h-screen bg-black text-zinc-50 antialiased">
+      <body className="min-h-screen bg-black text-neutral-50 antialiased">
         {children}
       </body>
     </html>
