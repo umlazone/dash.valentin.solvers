@@ -22,57 +22,33 @@ const nav = [
 
 type NavId = (typeof nav)[number]["id"];
 
-function Chip({
+function Pill({
   children,
   tone = "neutral",
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "good" | "warn" | "bad" | "solid";
+  tone?: "neutral" | "good" | "warn" | "bad" | "invert";
 }) {
-  const styles = {
-    neutral: "border-neutral-800 bg-neutral-950 text-neutral-400",
-    good: "border-emerald-500/25 bg-emerald-500/5 text-emerald-400",
-    warn: "border-yellow-500/25 bg-yellow-500/5 text-yellow-400",
-    bad: "border-red-500/25 bg-red-500/5 text-red-400",
-    solid: "border-transparent bg-white text-black",
+  const map = {
+    neutral: "border-white/10 bg-white/[0.03] text-neutral-300",
+    good: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+    warn: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+    bad: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+    invert: "border-transparent bg-white text-black",
   };
   return (
     <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-wide ${styles[tone]}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${map[tone]}`}
     >
       {children}
     </span>
   );
 }
 
-function toneForStatus(s: DraftStatus) {
+function statusTone(s: DraftStatus) {
   if (s === "approved" || s === "posted") return "good" as const;
   if (s === "rejected") return "bad" as const;
   return "warn" as const;
-}
-
-function Panel({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`rounded-lg border border-neutral-900 bg-[#0a0a0a] ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
-      {children}
-    </div>
-  );
 }
 
 export default function MissionControlPage() {
@@ -82,66 +58,55 @@ export default function MissionControlPage() {
     [],
   );
 
-  const titles: Record<NavId, { h: string; s: string }> = {
-    overview: {
-      h: "Overview",
-      s: "Phase, account health, and what needs you.",
-    },
-    areas: {
-      h: "Content areas",
-      s: "Factory lanes. Core first, growth second.",
-    },
-    drafts: {
-      h: "Draft queue",
-      s: "Approve before anything hits X.",
-    },
-    week: {
-      h: "This week",
-      s: "Cadence board. Blocked items need capture.",
-    },
-    ops: {
-      h: "Infrastructure",
-      s: "Stack, loops, and operating rules.",
-    },
-  };
-
   return (
-    <div className="min-h-screen bg-black text-neutral-50">
-      <div className="mx-auto flex min-h-screen max-w-[1280px]">
-        {/* Rail */}
-        <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col border-r border-neutral-900 px-4 py-6 md:flex">
-          <div className="px-2">
-            <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-600">
-              Solvers
+    <div className="mc-grid min-h-screen">
+      {/* TOP BAR — totally different shell from previous left-rail */}
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-black/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-[11px] font-bold tracking-tight text-black">
+              S
             </div>
-            <div className="mt-1 text-[15px] font-semibold tracking-tight">
-              Mission Control
-            </div>
-            <div className="mt-1 font-mono text-[11px] text-neutral-500">
-              {account.handle}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold tracking-tight">
+                  Mission Control
+                </span>
+                <Pill tone="invert">v1.2 rewrite</Pill>
+              </div>
+              <div className="truncate font-mono text-[11px] text-neutral-500">
+                solvers · {account.handle}
+              </div>
             </div>
           </div>
 
-          <nav className="mt-8 flex flex-1 flex-col gap-0.5">
+          <div className="hidden items-center gap-2 sm:flex">
+            <Pill tone="good">xurl live</Pill>
+            <Pill tone="warn">approve gate ON</Pill>
+            <Pill>auto-post OFF</Pill>
+          </div>
+        </div>
+
+        {/* Segmented control nav */}
+        <div className="mx-auto max-w-6xl px-4 pb-3 sm:px-6">
+          <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-1">
             {nav.map((item) => {
               const active = tab === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setTab(item.id)}
-                  className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-[13px] transition-colors ${
+                  className={`relative whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[12.5px] transition ${
                     active
-                      ? "bg-white font-medium text-black"
-                      : "text-neutral-400 hover:bg-neutral-950 hover:text-neutral-100"
+                      ? "bg-white font-semibold text-black shadow-[0_0_0_1px_rgba(255,255,255,0.2)]"
+                      : "text-neutral-400 hover:bg-white/5 hover:text-neutral-100"
                   }`}
                 >
-                  <span>{item.label}</span>
+                  {item.label}
                   {item.id === "drafts" && pending > 0 ? (
                     <span
-                      className={`min-w-5 rounded-full px-1.5 text-center text-[10px] font-medium ${
-                        active
-                          ? "bg-black text-white"
-                          : "bg-neutral-800 text-neutral-200"
+                      className={`ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                        active ? "bg-black text-white" : "bg-white/15 text-white"
                       }`}
                     >
                       {pending}
@@ -150,327 +115,303 @@ export default function MissionControlPage() {
                 </button>
               );
             })}
-          </nav>
+          </div>
+        </div>
+      </header>
 
-          <div className="mt-auto space-y-1 border-t border-neutral-900 px-2 pt-4 text-[11px] text-neutral-600">
-            <div className="flex justify-between">
-              <span>Auto-post</span>
-              <span className="text-neutral-400">OFF</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Approve gate</span>
-              <span className="text-neutral-400">ON</span>
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+        {/* Big visible banner so cache confusion is impossible */}
+        <div className="mb-6 overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-r from-white via-neutral-200 to-neutral-400 p-[1px]">
+          <div className="rounded-2xl bg-black px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">
+                  Design pass 1.2 · top shell · Inter + JetBrains Mono · grid bg
+                </div>
+                <div className="mt-1 text-lg font-semibold tracking-tight sm:text-xl">
+                  Si ves este banner blanco, ya no es el layout viejo.
+                </div>
+              </div>
+              <div className="font-mono text-[11px] text-neutral-400">
+                hard refresh: Cmd+Shift+R
+              </div>
             </div>
           </div>
-        </aside>
+        </div>
 
-        {/* Main */}
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 md:px-8 md:py-8">
-          <header className="mb-7 border-b border-neutral-900 pb-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
-                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-600">
-                  Content factory
+        {tab === "overview" && (
+          <div className="space-y-4">
+            {/* Hero strip */}
+            <section className="grid gap-3 lg:grid-cols-12">
+              <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5 lg:col-span-7">
+                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-neutral-500">
+                  Operator brief
                 </div>
-                <h1 className="mt-2 text-[28px] font-semibold leading-none tracking-tight">
-                  {titles[tab].h}
+                <h1 className="mt-3 max-w-xl text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl">
+                  Agents do the work.
+                  <br />
+                  <span className="text-neutral-500">We build the systems.</span>
                 </h1>
-                <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">
-                  {titles[tab].s}
+                <p className="mt-4 max-w-lg text-[14px] leading-relaxed text-neutral-400">
+                  Content factory para {account.handle}. Objetivo 90d:{" "}
+                  <span className="text-neutral-200">
+                    {account.objective90d}
+                  </span>
+                  . Publicación solo con approve humano.
                 </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Pill tone="invert">phase · calibración</Pill>
+                  <Pill>{account.language}</Pill>
+                  <Pill>{account.plan}</Pill>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                <Chip>Phase · calibración</Chip>
-                <Chip tone="good">xurl · live</Chip>
-                <Chip tone="warn">demo data</Chip>
-              </div>
-            </div>
 
-            {/* Mobile nav */}
-            <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1 md:hidden">
-              {nav.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setTab(item.id)}
-                  className={`whitespace-nowrap rounded-md border px-2.5 py-1.5 text-[12px] ${
-                    tab === item.id
-                      ? "border-white bg-white text-black"
-                      : "border-neutral-800 text-neutral-400"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </header>
-
-          {tab === "overview" && (
-            <div className="space-y-5">
-              <section className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
-                {statusCards.map((c) => (
-                  <Panel key={c.label} className="px-3.5 py-3.5">
-                    <div className="text-[11px] text-neutral-500">{c.label}</div>
-                    <div className="mt-1.5 text-[22px] font-semibold tracking-tight">
+              <div className="grid grid-cols-2 gap-3 lg:col-span-5">
+                {statusCards.map((c, i) => (
+                  <div
+                    key={c.label}
+                    className={`rounded-2xl border border-white/10 p-4 ${
+                      i === 0 ? "bg-white text-black" : "bg-[#0c0c0c]"
+                    }`}
+                  >
+                    <div
+                      className={`text-[11px] ${
+                        i === 0 ? "text-neutral-600" : "text-neutral-500"
+                      }`}
+                    >
+                      {c.label}
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold tracking-tight">
                       {c.value}
                     </div>
                     {c.hint ? (
-                      <div className="mt-1 text-[11px] text-neutral-600">
+                      <div
+                        className={`mt-1 text-[11px] ${
+                          i === 0 ? "text-neutral-500" : "text-neutral-600"
+                        }`}
+                      >
                         {c.hint}
                       </div>
                     ) : null}
-                  </Panel>
+                  </div>
                 ))}
-              </section>
+              </div>
+            </section>
 
-              <section className="grid gap-2.5 lg:grid-cols-5">
-                <Panel className="p-4 lg:col-span-2">
-                  <SectionLabel>Account</SectionLabel>
-                  <dl className="space-y-2.5 text-[13px]">
-                    {[
-                      ["Handle", account.handle, true],
-                      ["Plan", account.plan, false],
-                      ["Language", account.language, false],
-                      ["90d", account.objective90d, false],
-                    ].map(([k, v, mono]) => (
-                      <div
-                        key={String(k)}
-                        className="flex items-start justify-between gap-4"
-                      >
-                        <dt className="shrink-0 text-neutral-500">{k}</dt>
-                        <dd
-                          className={`text-right text-neutral-200 ${
-                            mono ? "font-mono text-[12px]" : ""
-                          }`}
-                        >
-                          {v}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p className="mt-4 border-t border-neutral-900 pt-3 text-[12px] leading-relaxed text-neutral-500">
-                    {account.bio}
-                  </p>
-                </Panel>
-
-                <Panel className="p-4 lg:col-span-3">
-                  <SectionLabel>Diagnosis</SectionLabel>
-                  <ul className="space-y-3 text-[13px] leading-relaxed text-neutral-400">
-                    <li className="flex gap-3">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
-                      Bio promises agentic ops; recent feed is inconsistent.
-                      Factory closes the bio↔feed gap.
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
-                      Real signal already exists: Hermes vs OpenClaw, Claude
-                      one-shot site, tools that burn accounts.
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
-                      Ship cases and takes with proof — never robotic stacks.
-                    </li>
-                  </ul>
-                </Panel>
-              </section>
-
-              <Panel className="p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <SectionLabel>Needs you</SectionLabel>
-                  <Chip tone="warn">owner action</Chip>
+            <section className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
+                  Diagnosis
                 </div>
-                <div className="grid gap-2 md:grid-cols-3">
+                <ul className="mt-4 space-y-3 text-[13.5px] leading-relaxed text-neutral-400">
+                  <li className="border-l-2 border-white/20 pl-3">
+                    Bio agentic vs feed reciente disperso → cerrar gap con casos
+                    reales.
+                  </li>
+                  <li className="border-l-2 border-white/20 pl-3">
+                    Oro ya existe: Hermes, Claude one-shot, tools que queman
+                    cuenta.
+                  </li>
+                  <li className="border-l-2 border-white/20 pl-3">
+                    High-ticket + valor público = historias de Solvers, no stacks
+                    robóticos.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
+                    Needs you
+                  </div>
+                  <Pill tone="warn">3 open</Pill>
+                </div>
+                <div className="space-y-2">
                   {[
-                    {
-                      n: "01",
-                      t: "Approve draft",
-                      d: "Tool that burned the account — SÍ / NO / CAMBIAR",
-                    },
-                    {
-                      n: "02",
-                      t: "Send a capture",
-                      d: "One real Solvers moment (voice or text)",
-                    },
-                    {
-                      n: "03",
-                      t: "Creators list",
-                      d: "5 LATAM/ES handles for mechanism scout",
-                    },
-                  ].map((a) => (
+                    "Approve draft: tool burned account",
+                    "1 captura real Solvers (voz/texto)",
+                    "5 creators LATAM/ES para scout",
+                  ].map((t, idx) => (
                     <div
-                      key={a.n}
-                      className="rounded-md border border-neutral-900 bg-black px-3 py-3"
+                      key={t}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/40 px-3 py-3"
                     >
-                      <div className="font-mono text-[10px] text-neutral-600">
-                        {a.n}
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white font-mono text-[11px] font-bold text-black">
+                        {idx + 1}
                       </div>
-                      <div className="mt-1 text-[13px] font-medium text-neutral-100">
-                        {a.t}
-                      </div>
-                      <div className="mt-1 text-[12px] leading-relaxed text-neutral-500">
-                        {a.d}
-                      </div>
+                      <div className="text-[13px] text-neutral-200">{t}</div>
                     </div>
                   ))}
                 </div>
-              </Panel>
-            </div>
-          )}
+              </div>
+            </section>
+          </div>
+        )}
 
-          {tab === "areas" && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {areas.map((area) => (
-                <Panel key={area.id} className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-mono text-[10px] tracking-wide text-neutral-600">
-                        {area.code}
-                      </div>
-                      <div className="mt-1 text-[14px] font-medium">
-                        {area.name}
-                      </div>
+        {tab === "areas" && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {areas.map((area) => (
+              <div
+                key={area.id}
+                className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[10px] tracking-[0.14em] text-neutral-500">
+                      {area.code}
                     </div>
-                    <Chip
-                      tone={
-                        area.priority === "core"
-                          ? "good"
-                          : area.priority === "growth"
+                    <div className="mt-1 text-[15px] font-semibold tracking-tight">
+                      {area.name}
+                    </div>
+                  </div>
+                  <Pill
+                    tone={
+                      area.priority === "core"
+                        ? "good"
+                        : area.priority === "growth"
+                          ? "warn"
+                          : "neutral"
+                    }
+                  >
+                    {area.priority}
+                  </Pill>
+                </div>
+                <p className="mt-3 text-[13px] leading-relaxed text-neutral-400">
+                  {area.description}
+                </p>
+                <div className="mt-4 border-t border-white/10 pt-3 font-mono text-[11px] text-neutral-500">
+                  weekly · {area.weeklyTarget}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "drafts" && (
+          <div className="space-y-3">
+            {drafts.map((d) => (
+              <article
+                key={d.id}
+                className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pill tone={statusTone(d.status)}>{d.status}</Pill>
+                  <Pill>{d.area}</Pill>
+                  <Pill>{d.language}</Pill>
+                  <span className="font-mono text-[11px] text-neutral-500">
+                    {d.updatedAt}
+                  </span>
+                </div>
+                <h2 className="mt-4 text-xl font-semibold tracking-tight">
+                  {d.title}
+                </h2>
+                <p className="mt-3 max-w-3xl text-[14px] leading-relaxed text-neutral-400">
+                  {d.preview}
+                </p>
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                  <div className="text-[12px] text-neutral-500">
+                    Source · {d.source}
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="rounded-full bg-white px-4 py-1.5 text-[12px] font-semibold text-black">
+                      SÍ
+                    </button>
+                    <button className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300">
+                      NO
+                    </button>
+                    <button className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300">
+                      CAMBIAR
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {tab === "week" && (
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0c]">
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-neutral-500">
+                  <th className="px-5 py-3.5 font-medium">Day</th>
+                  <th className="px-5 py-3.5 font-medium">Piece</th>
+                  <th className="px-5 py-3.5 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekly.map((w) => (
+                  <tr
+                    key={w.day + w.item}
+                    className="border-b border-white/5 last:border-0"
+                  >
+                    <td className="px-5 py-3.5 font-mono text-[12px] text-neutral-500">
+                      {w.day}
+                    </td>
+                    <td className="px-5 py-3.5 text-neutral-200">{w.item}</td>
+                    <td className="px-5 py-3.5">
+                      <Pill
+                        tone={
+                          w.state === "pending"
                             ? "warn"
-                            : "neutral"
-                      }
-                    >
-                      {area.priority}
-                    </Chip>
-                  </div>
-                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-neutral-400">
-                    {area.description}
-                  </p>
-                  <div className="mt-3 border-t border-neutral-900 pt-2.5 text-[11px] text-neutral-600">
-                    Weekly · {area.weeklyTarget}
-                  </div>
-                </Panel>
-              ))}
-            </div>
-          )}
-
-          {tab === "drafts" && (
-            <div className="space-y-2.5">
-              {drafts.map((d) => (
-                <article key={d.id}>
-                  <Panel className="p-4">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Chip tone={toneForStatus(d.status)}>{d.status}</Chip>
-                      <Chip>{d.area}</Chip>
-                      <Chip>{d.language}</Chip>
-                      <span className="font-mono text-[11px] text-neutral-600">
-                        {d.updatedAt}
-                      </span>
-                    </div>
-                    <h2 className="mt-3 text-[16px] font-medium tracking-tight">
-                      {d.title}
-                    </h2>
-                    <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-neutral-400">
-                      {d.preview}
-                    </p>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-900 pt-3">
-                      <div className="text-[11px] text-neutral-600">
-                        Source · {d.source}
-                      </div>
-                      <div className="flex gap-1.5">
-                        {["SÍ", "NO", "CAMBIAR"].map((a) => (
-                          <span
-                            key={a}
-                            className="rounded-md border border-neutral-800 px-2.5 py-1 text-[11px] font-medium text-neutral-400"
-                          >
-                            {a}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </Panel>
-                </article>
-              ))}
-              <p className="px-1 pt-1 text-[11px] text-neutral-600">
-                v1: approve via Telegram. Next: wire actions → Supabase → xurl.
-              </p>
-            </div>
-          )}
-
-          {tab === "week" && (
-            <Panel className="overflow-hidden">
-              <table className="w-full text-left text-[13px]">
-                <thead>
-                  <tr className="border-b border-neutral-900 text-[11px] uppercase tracking-[0.12em] text-neutral-600">
-                    <th className="px-4 py-3 font-medium">Day</th>
-                    <th className="px-4 py-3 font-medium">Piece</th>
-                    <th className="px-4 py-3 font-medium">State</th>
+                            : w.state.includes("needs") ||
+                                w.state.includes("blocked")
+                              ? "bad"
+                              : "neutral"
+                        }
+                      >
+                        {w.state}
+                      </Pill>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {weekly.map((w) => (
-                    <tr
-                      key={w.day + w.item}
-                      className="border-b border-neutral-900/80 last:border-0"
-                    >
-                      <td className="px-4 py-3 font-mono text-[12px] text-neutral-500">
-                        {w.day}
-                      </td>
-                      <td className="px-4 py-3 text-neutral-200">{w.item}</td>
-                      <td className="px-4 py-3">
-                        <Chip
-                          tone={
-                            w.state === "pending"
-                              ? "warn"
-                              : w.state.includes("needs") ||
-                                  w.state.includes("blocked")
-                                ? "bad"
-                                : "neutral"
-                          }
-                        >
-                          {w.state}
-                        </Chip>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Panel>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-          {tab === "ops" && (
-            <div className="grid gap-2.5 lg:grid-cols-2">
-              <Panel className="p-4">
-                <SectionLabel>Connected stack</SectionLabel>
-                <dl className="space-y-2.5 text-[13px]">
-                  {(
-                    [
-                      ["GitHub", infra.github],
-                      ["Vercel", infra.vercelAccount],
-                      ["Supabase", infra.supabaseProject],
-                      ["X", infra.xAccount],
-                      ["Hermes vault", infra.hermesPath],
-                    ] as const
-                  ).map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-3">
-                      <dt className="text-neutral-500">{k}</dt>
-                      <dd className="font-mono text-[11px] text-neutral-300">
-                        {v}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </Panel>
-              <Panel className="p-4">
-                <SectionLabel>Operating loops</SectionLabel>
-                <ol className="list-decimal space-y-2.5 pl-4 text-[13px] leading-relaxed text-neutral-400">
-                  {processes.map((p) => (
-                    <li key={p}>{p}</li>
-                  ))}
-                </ol>
-              </Panel>
+        {tab === "ops" && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
+                Connected stack
+              </div>
+              <dl className="mt-4 space-y-3 text-[13px]">
+                {(
+                  [
+                    ["GitHub", infra.github],
+                    ["Vercel", infra.vercelAccount],
+                    ["Supabase", infra.supabaseProject],
+                    ["X", infra.xAccount],
+                    ["Hermes", infra.hermesPath],
+                  ] as const
+                ).map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between gap-3">
+                    <dt className="text-neutral-500">{k}</dt>
+                    <dd className="font-mono text-[11px] text-neutral-300">
+                      {v}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </div>
-          )}
-        </main>
-      </div>
+            <div className="rounded-2xl border border-white/10 bg-[#0c0c0c] p-5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-500">
+                Operating loops
+              </div>
+              <ol className="mt-4 list-decimal space-y-2.5 pl-4 text-[13px] leading-relaxed text-neutral-400">
+                {processes.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
+
+        <footer className="mt-10 border-t border-white/10 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-600">
+          design rewrite 1.2 · top nav · bento · white hero card · not the old sidebar
+        </footer>
+      </main>
     </div>
   );
 }

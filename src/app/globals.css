@@ -1,19 +1,25 @@
 @import "tailwindcss";
 
+@theme inline {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+}
+
 :root {
-  --bg: #000000;
-  --panel: #0a0a0a;
-  --panel-2: #111111;
-  --line: #1a1a1a;
-  --line-strong: #2a2a2a;
+  --bg: #050505;
+  --bg-elev: #0c0c0c;
+  --bg-card: #101010;
+  --line: #222;
+  --line-2: #2e2e2e;
   --ink: #fafafa;
-  --body: #e5e5e5;
-  --muted: #a3a3a3;
-  --faint: #737373;
-  --dim: #525252;
-  --good: #4ade80;
-  --warn: #facc15;
-  --bad: #f87171;
+  --muted: #9a9a9a;
+  --faint: #6b6b6b;
+  --good: #3dd68c;
+  --warn: #f0b429;
+  --bad: #f2555a;
+  --accent: #ffffff;
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 * {
@@ -26,25 +32,13 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--ink);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  font-feature-settings: "ss01" on, "cv11" on;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button {
-  font: inherit;
+.font-mono,
+.mono {
+  font-family: var(--font-mono), ui-monospace, Menlo, monospace;
 }
 
 ::selection {
@@ -52,17 +46,19 @@ button {
   color: #000;
 }
 
-.mono {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace;
+/* Distinct background grid so the new design is obvious */
+.mc-grid {
+  background-color: #050505;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
-/* hairline helpers for hair-thin borders on retina */
-.hairline {
-  box-shadow: inset 0 0 0 1px var(--line);
+.mc-noise {
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.06) 0.5px,
+    transparent 0.5px
+  );
+  background-size: 3px 3px;
 }
