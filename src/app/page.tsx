@@ -400,7 +400,7 @@ export default function MissionControlPage() {
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   {[
                     { k: "ES posts", v: 85, t: "good" as const },
-                    { k: "EN selective", v: 15, t: "neutral" as const },
+                    { k: "EN selective", v: 15, t: "white" as const },
                     { k: "Casos / roadblocks", v: 40, t: "warn" as const },
                     { k: "Replies / quotes", v: 45, t: "good" as const },
                   ].map((x) => (
