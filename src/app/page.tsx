@@ -1,23 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, Ring, Sparkline, heatClass } from "@/components/charts";
-import {
-  account,
-  areas,
-  automations,
-  calendar,
-  drafts,
-  funnel,
-  pipeline,
-  scheduleSlots,
-  sparkEngagement,
-  sparkFollowers,
-  sparkPosts,
-  statusCards,
-  weeklyGoals,
-  type DraftStatus,
-} from "@/lib/data";
+import type { LiveBundle } from "@/lib/live";
+import * as seed from "@/lib/data";
 
 const nav = [
   { id: "board", label: "Board" },
@@ -76,25 +62,92 @@ function Label({ children }: { children: React.ReactNode }) {
   );
 }
 
-function statusTone(s: DraftStatus | string) {
+function statusTone(s: string) {
   if (s === "approved" || s === "posted" || s === "done") return "good" as const;
-  if (s === "rejected" || s === "blocked" || String(s).includes("blocked"))
+  if (s === "rejected" || s === "blocked" || s.includes("blocked"))
     return "bad" as const;
   if (s === "needs_approve" || s === "pending") return "warn" as const;
   return "neutral" as const;
 }
 
+function fallbackBundle(): LiveBundle {
+  return {
+    source: "seed",
+    capturedAt: null,
+    account: seed.account,
+    statusCards: seed.statusCards,
+    sparkFollowers: seed.sparkFollowers,
+    sparkEngagement: seed.sparkEngagement,
+    sparkPosts: seed.sparkPosts,
+    funnel: seed.funnel,
+    areas: seed.areas,
+    drafts: seed.drafts,
+    calendar: seed.calendar,
+    scheduleSlots: seed.scheduleSlots,
+    automations: seed.automations,
+    pipeline: seed.pipeline,
+    weeklyGoals: seed.weeklyGoals,
+  };
+}
+
 export default function MissionControlPage() {
   const [tab, setTab] = useState<NavId>("board");
+  const [data, setData] = useState<LiveBundle | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await fetch("/api/mc/live", { cache: "no-store" });
+      if (!res.ok) throw new Error(`live ${res.status}`);
+      const json = (await res.json()) as LiveBundle;
+      setData(json);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "load failed");
+      setData((prev) => prev || fallbackBundle());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 60_000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  const d = data || fallbackBundle();
   const pending = useMemo(
-    () => drafts.filter((d) => d.status === "pending").length,
-    [],
+    () => d.drafts.filter((x) => x.status === "pending").length,
+    [d.drafts],
   );
   const weeklyPct = Math.round(
-    (weeklyGoals.reduce((a, g) => a + g.current / g.target, 0) /
-      weeklyGoals.length) *
+    (d.weeklyGoals.reduce((a, g) => a + g.current / Math.max(g.target, 1), 0) /
+      Math.max(d.weeklyGoals.length, 1)) *
       100,
   );
+
+  async function setDraftStatus(id: string, status: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/mc/drafts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `patch ${res.status}`);
+      }
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "patch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="mc-grid min-h-screen">
@@ -109,17 +162,30 @@ export default function MissionControlPage() {
                 <span className="text-sm font-semibold tracking-tight">
                   Mission Control
                 </span>
-                <Pill tone="invert">v1.3 ops</Pill>
+                <Pill tone="invert">v1.4 live</Pill>
+                <Pill tone={d.source === "supabase" ? "good" : "warn"}>
+                  {d.source === "supabase" ? "supabase" : "seed fallback"}
+                </Pill>
               </div>
               <div className="truncate font-mono text-[11px] text-neutral-500">
-                content factory · {account.handle}
+                {d.account.handle}
+                {d.capturedAt
+                  ? ` · synced ${new Date(d.capturedAt).toLocaleString()}`
+                  : ""}
               </div>
             </div>
           </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <Pill tone="good">xurl live</Pill>
-            <Pill tone="warn">approve ON</Pill>
-            <Pill>auto-post OFF</Pill>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refresh()}
+              className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-neutral-300 hover:bg-white/5"
+            >
+              {loading ? "loading…" : "refresh"}
+            </button>
+            <div className="hidden items-center gap-2 md:flex">
+              <Pill tone="good">xurl → sb</Pill>
+              <Pill tone="warn">approve ON</Pill>
+            </div>
           </div>
         </div>
 
@@ -151,16 +217,18 @@ export default function MissionControlPage() {
               );
             })}
           </div>
+          {error ? (
+            <div className="mt-2 text-[11px] text-rose-300">{error}</div>
+          ) : null}
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-        {/* KPI row — always visible */}
         <section className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {statusCards.map((c, i) => (
+          {d.statusCards.map((c, i) => (
             <Card
               key={c.label}
-              className={`p-4 ${i === 0 ? "bg-white text-black border-white" : ""}`}
+              className={`p-4 ${i === 0 ? "border-white bg-white text-black" : ""}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -181,10 +249,10 @@ export default function MissionControlPage() {
                 <Sparkline
                   data={
                     i === 0
-                      ? sparkFollowers
+                      ? d.sparkFollowers
                       : i === 2
-                        ? sparkPosts
-                        : sparkEngagement
+                        ? d.sparkPosts
+                        : d.sparkEngagement
                   }
                   stroke={i === 0 ? "#000" : "#fff"}
                   width={88}
@@ -198,13 +266,12 @@ export default function MissionControlPage() {
         {tab === "board" && (
           <div className="space-y-4">
             <div className="grid gap-3 lg:grid-cols-12">
-              {/* Weekly score */}
               <Card className="p-5 lg:col-span-4">
                 <Label>Week score</Label>
                 <div className="mt-4 flex items-center gap-6">
                   <Ring value={weeklyPct} max={100} label="avg goals" />
                   <div className="flex-1 space-y-3">
-                    {weeklyGoals.map((g) => (
+                    {d.weeklyGoals.map((g) => (
                       <div key={g.label}>
                         <div className="mb-1 flex justify-between text-[12px]">
                           <span className="text-neutral-400">{g.label}</span>
@@ -229,11 +296,10 @@ export default function MissionControlPage() {
                 </div>
               </Card>
 
-              {/* Funnel visual */}
               <Card className="p-5 lg:col-span-5">
                 <Label>Attention → revenue funnel (7d)</Label>
                 <div className="mt-4 space-y-3">
-                  {funnel.map((f) => (
+                  {d.funnel.map((f) => (
                     <div key={f.stage}>
                       <div className="mb-1 flex items-center justify-between text-[12px]">
                         <span className="text-neutral-400">{f.stage}</span>
@@ -244,7 +310,7 @@ export default function MissionControlPage() {
                       <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className="h-full rounded-full bg-white"
-                          style={{ width: `${f.pct}%` }}
+                          style={{ width: `${Math.min(100, f.pct)}%` }}
                         />
                       </div>
                     </div>
@@ -252,43 +318,43 @@ export default function MissionControlPage() {
                 </div>
               </Card>
 
-              {/* Live actions */}
               <Card className="p-5 lg:col-span-3">
-                <Label>Do next</Label>
-                <div className="mt-4 space-y-2">
-                  {[
-                    { t: "Aprobar draft A5", s: "warn" as const },
-                    { t: "Captura Solvers", s: "bad" as const },
-                    { t: "10 replies valor", s: "neutral" as const },
-                    { t: "Programar Jue/Vie", s: "neutral" as const },
-                  ].map((a, i) => (
-                    <div
-                      key={a.t}
-                      className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5"
-                    >
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white font-mono text-[10px] font-bold text-black">
-                        {i + 1}
-                      </div>
-                      <div className="flex-1 text-[12.5px] text-neutral-200">
-                        {a.t}
-                      </div>
-                      <Pill tone={a.s}>go</Pill>
-                    </div>
-                  ))}
-                </div>
+                <Label>Account live</Label>
+                <dl className="mt-4 space-y-2.5 text-[12.5px]">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-neutral-500">Plan</dt>
+                    <dd>{d.account.plan}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-neutral-500">Following</dt>
+                    <dd className="font-mono">{d.account.following}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-neutral-500">Likes</dt>
+                    <dd className="font-mono">{d.account.likes}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-neutral-500">Tweets</dt>
+                    <dd className="font-mono">{d.account.tweets}</dd>
+                  </div>
+                </dl>
+                <p className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-neutral-500">
+                  {d.account.bio}
+                </p>
               </Card>
             </div>
 
-            {/* Areas as progress grid */}
             <Card className="p-5">
               <div className="mb-4 flex items-center justify-between">
                 <Label>Content areas · weekly fill</Label>
-                <Pill>visual load, not walls of text</Pill>
+                <Pill tone={d.source === "supabase" ? "good" : "warn"}>
+                  {d.source}
+                </Pill>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {areas.map((area) => {
+                {d.areas.map((area) => {
                   const pct = Math.round(
-                    (area.doneThisWeek / area.weeklyTarget) * 100,
+                    (area.doneThisWeek / Math.max(area.weeklyTarget, 1)) * 100,
                   );
                   return (
                     <div
@@ -342,11 +408,10 @@ export default function MissionControlPage() {
 
         {tab === "pipeline" && (
           <div className="space-y-4">
-            {/* Factory conveyor */}
             <Card className="p-5">
               <Label>Factory pipeline</Label>
               <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-stretch">
-                {pipeline.map((stage, i) => (
+                {d.pipeline.map((stage, i) => (
                   <div key={stage.id} className="flex flex-1 items-stretch gap-3">
                     <div className="flex min-h-[110px] flex-1 flex-col justify-between rounded-xl border border-white/10 bg-black/50 p-4">
                       <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">
@@ -355,11 +420,11 @@ export default function MissionControlPage() {
                       <div className="text-3xl font-semibold tabular-nums">
                         {stage.count}
                       </div>
-                      <Pill tone={stage.tone}>
+                      <Pill tone={stage.tone === "warn" ? "warn" : stage.tone === "good" ? "good" : "neutral"}>
                         {stage.count === 0 ? "empty" : "active"}
                       </Pill>
                     </div>
-                    {i < pipeline.length - 1 ? (
+                    {i < d.pipeline.length - 1 ? (
                       <div className="hidden items-center text-neutral-600 md:flex">
                         →
                       </div>
@@ -367,59 +432,7 @@ export default function MissionControlPage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-4 text-[12px] text-neutral-500">
-                Flujo: captura → scout → draft → approve → schedule → post.
-                El cuello de botella hoy:{" "}
-                <span className="text-amber-200">drafts sin approve</span> y{" "}
-                <span className="text-rose-300">0 capturas Solvers</span>.
-              </p>
             </Card>
-
-            <div className="grid gap-3 lg:grid-cols-2">
-              <Card className="p-5">
-                <Label>Where work dies</Label>
-                <div className="mt-4 space-y-3">
-                  {[
-                    { k: "Sin captura real", v: 70 },
-                    { k: "Draft sin approve", v: 55 },
-                    { k: "Sin schedule slot", v: 40 },
-                    { k: "Replies no hechas", v: 65 },
-                  ].map((x) => (
-                    <div key={x.k}>
-                      <div className="mb-1 flex justify-between text-[12px]">
-                        <span className="text-neutral-400">{x.k}</span>
-                        <span className="font-mono text-neutral-300">{x.v}%</span>
-                      </div>
-                      <Bar value={x.v} tone={x.v > 60 ? "bad" : "warn"} />
-                    </div>
-                  ))}
-                </div>
-              </Card>
-              <Card className="p-5">
-                <Label>Post mix target (ES/EN · types)</Label>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {[
-                    { k: "ES posts", v: 85, t: "good" as const },
-                    { k: "EN selective", v: 15, t: "white" as const },
-                    { k: "Casos / roadblocks", v: 40, t: "warn" as const },
-                    { k: "Replies / quotes", v: 45, t: "good" as const },
-                  ].map((x) => (
-                    <div
-                      key={x.k}
-                      className="rounded-xl border border-white/10 bg-black/40 p-3"
-                    >
-                      <div className="text-[11px] text-neutral-500">{x.k}</div>
-                      <div className="mt-1 text-xl font-semibold tabular-nums">
-                        {x.v}%
-                      </div>
-                      <div className="mt-2">
-                        <Bar value={x.v} tone={x.t} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
           </div>
         )}
 
@@ -428,22 +441,22 @@ export default function MissionControlPage() {
             <Card className="p-5">
               <div className="mb-4 flex items-center justify-between">
                 <Label>Week heatmap · posts + replies</Label>
-                <Pill>programación visual</Pill>
+                <Pill>programación</Pill>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                {calendar.map((d) => (
+                {d.calendar.map((day) => (
                   <div
-                    key={d.day}
-                    className={`rounded-xl border border-white/10 p-3 ${heatClass(d.posts, d.replies)}`}
+                    key={day.day}
+                    className={`rounded-xl border border-white/10 p-3 ${heatClass(day.posts, day.replies)}`}
                   >
                     <div className="font-mono text-[11px] text-neutral-400">
-                      {d.day}
+                      {day.day}
                     </div>
                     <div className="mt-3 flex gap-3">
                       <div>
                         <div className="text-[10px] text-neutral-500">posts</div>
                         <div className="text-lg font-semibold tabular-nums">
-                          {d.posts}
+                          {day.posts}
                         </div>
                       </div>
                       <div>
@@ -451,12 +464,12 @@ export default function MissionControlPage() {
                           replies
                         </div>
                         <div className="text-lg font-semibold tabular-nums">
-                          {d.replies}
+                          {day.replies}
                         </div>
                       </div>
                     </div>
                     <div className="mt-2 text-[11px] leading-snug text-neutral-400">
-                      {d.focus}
+                      {day.focus}
                     </div>
                   </div>
                 ))}
@@ -466,7 +479,7 @@ export default function MissionControlPage() {
             <Card className="p-5">
               <Label>Schedule queue</Label>
               <div className="mt-4 space-y-2">
-                {scheduleSlots.map((s) => (
+                {d.scheduleSlots.map((s) => (
                   <div
                     key={s.id}
                     className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -491,48 +504,60 @@ export default function MissionControlPage() {
 
         {tab === "drafts" && (
           <div className="space-y-3">
-            {drafts.map((d) => (
-              <Card key={d.id} className="p-5">
+            {d.drafts.map((draft) => (
+              <Card key={draft.id} className="p-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Pill tone={statusTone(d.status)}>{d.status}</Pill>
-                  <Pill>{d.area}</Pill>
-                  <Pill>{d.language}</Pill>
-                  <Pill tone="invert">score {d.score}</Pill>
+                  <Pill tone={statusTone(draft.status)}>{draft.status}</Pill>
+                  <Pill>{draft.area}</Pill>
+                  <Pill>{draft.language}</Pill>
+                  <Pill tone="invert">score {draft.score}</Pill>
                 </div>
                 <h2 className="mt-4 text-xl font-semibold tracking-tight">
-                  {d.title}
+                  {draft.title}
                 </h2>
                 <p className="mt-3 max-w-3xl text-[14px] leading-relaxed text-neutral-400">
-                  {d.preview}
+                  {draft.preview}
                 </p>
                 <div className="mt-4">
                   <div className="mb-1 flex justify-between text-[11px] text-neutral-500">
                     <span>Publish readiness</span>
-                    <span className="font-mono">{d.score}/100</span>
+                    <span className="font-mono">{draft.score}/100</span>
                   </div>
-                  <Bar value={d.score} tone={d.score > 75 ? "good" : "warn"} />
+                  <Bar
+                    value={draft.score}
+                    tone={draft.score > 75 ? "good" : "warn"}
+                  />
                 </div>
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
                   <div className="text-[12px] text-neutral-500">
-                    Source · {d.source}
+                    Source · {draft.source}
                   </div>
                   <div className="flex gap-2">
-                    <button className="rounded-full bg-white px-4 py-1.5 text-[12px] font-semibold text-black">
-                      SÍ · schedule
+                    <button
+                      disabled={busyId === draft.id}
+                      onClick={() => setDraftStatus(draft.id, "approved")}
+                      className="rounded-full bg-white px-4 py-1.5 text-[12px] font-semibold text-black disabled:opacity-50"
+                    >
+                      SÍ · approve
                     </button>
-                    <button className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300">
+                    <button
+                      disabled={busyId === draft.id}
+                      onClick={() => setDraftStatus(draft.id, "rejected")}
+                      className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300 disabled:opacity-50"
+                    >
                       NO
                     </button>
-                    <button className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300">
-                      CAMBIAR
+                    <button
+                      disabled={busyId === draft.id}
+                      onClick={() => setDraftStatus(draft.id, "pending")}
+                      className="rounded-full border border-white/15 px-4 py-1.5 text-[12px] text-neutral-300 disabled:opacity-50"
+                    >
+                      RESET
                     </button>
                   </div>
                 </div>
               </Card>
             ))}
-            <p className="px-1 text-[11px] text-neutral-600">
-              v1.3 UI: approve visual listo. Wire → Supabase + xurl en v1.4.
-            </p>
           </div>
         )}
 
@@ -541,7 +566,7 @@ export default function MissionControlPage() {
             <Card className="p-5">
               <Label>Automation switches</Label>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {automations.map((a) => (
+                {d.automations.map((a) => (
                   <div
                     key={a.id}
                     className="rounded-xl border border-white/10 bg-black/40 p-4"
@@ -574,39 +599,17 @@ export default function MissionControlPage() {
                 ))}
               </div>
               <p className="mt-4 text-[12px] text-neutral-500">
-                Auto-publish se queda OFF hasta que el tono y el approve loop
-                estén estables. El resto se enciende con Hermes cron.
+                Live account metrics:{" "}
+                <code className="text-neutral-300">
+                  python3 ~/solvers-x-engine/scripts/sync_x_to_supabase.py
+                </code>
               </p>
             </Card>
-
-            <div className="grid gap-3 lg:grid-cols-3">
-              {[
-                {
-                  t: "Programar contenido",
-                  d: "Calendar + schedule queue → slots con estado",
-                },
-                {
-                  t: "Crear drafts",
-                  d: "Captura / scout → draft score → approve",
-                },
-                {
-                  t: "Automatizar",
-                  d: "Pulse + scout ON; post solo approved",
-                },
-              ].map((x) => (
-                <Card key={x.t} className="p-4">
-                  <div className="text-[13px] font-medium">{x.t}</div>
-                  <div className="mt-2 text-[12px] leading-relaxed text-neutral-400">
-                    {x.d}
-                  </div>
-                </Card>
-              ))}
-            </div>
           </div>
         )}
 
         <footer className="mt-10 border-t border-white/10 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-neutral-600">
-          v1.3 · sparklines · funnel · heatmap · pipeline · automation panel
+          v1.4 live · supabase · refresh 60s · approve writes to db
         </footer>
       </main>
     </div>
