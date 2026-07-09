@@ -5,44 +5,51 @@ export type ContentArea = {
   code: string;
   name: string;
   description: string;
-  priority: "core" | "growth" | "side";
-  weeklyTarget: string;
-};
-
-export type Draft = {
-  id: string;
-  title: string;
-  area: string;
-  status: DraftStatus;
-  language: "ES" | "EN" | "MIX";
-  preview: string;
-  source: string;
-  updatedAt: string;
-};
-
-export type Metric = {
-  label: string;
-  value: string;
-  hint?: string;
+  priority: "core" | "growth" | "support";
+  weeklyTarget: number;
+  doneThisWeek: number;
 };
 
 export const account = {
   handle: "@valentinflrz",
   name: "Valentin Florez",
   bio: "Agentic operations studio. Agents do the work. We build the systems.",
+  plan: "X Premium",
   followers: 321,
   following: 188,
-  plan: "Premium",
-  objective90d: "Mix — marca personal + leads Solvers alto ticket",
+  tweets: 8099,
+  likes: 3024,
   language: "ES default · EN selectivo",
-  phase: "Mission Control + calibración de voz",
+  objective90d: "Mix: marca + leads alto ticket Solvers",
 };
 
-export const statusCards: Metric[] = [
-  { label: "Followers", value: "321", hint: "early stage" },
-  { label: "Posts core / sem", value: "0/5", hint: "meta calibración" },
-  { label: "Drafts pending", value: "1", hint: "listos para approve" },
-  { label: "Auto-post", value: "OFF", hint: "solo con approve" },
+export const statusCards = [
+  { label: "Followers", value: "321", hint: "+12 / 30d", delta: 3.8 },
+  { label: "Drafts pending", value: "1", hint: "approve gate ON", delta: 0 },
+  { label: "Posted 7d", value: "2", hint: "target 7", delta: -40 },
+  { label: "Replies 7d", value: "4", hint: "target 15", delta: -20 },
+];
+
+/** Mock series for sparkline — will later come from X metrics / Supabase */
+export const sparkFollowers = [280, 286, 290, 295, 298, 301, 305, 310, 312, 315, 318, 321];
+export const sparkEngagement = [12, 18, 9, 22, 14, 30, 11, 25, 19, 28, 16, 24];
+export const sparkPosts = [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1];
+
+export const pipeline = [
+  { id: "capture", label: "Capturas", count: 3, tone: "neutral" as const },
+  { id: "scout", label: "Scout", count: 8, tone: "neutral" as const },
+  { id: "draft", label: "Drafts", count: 1, tone: "warn" as const },
+  { id: "approved", label: "Aprobados", count: 0, tone: "good" as const },
+  { id: "scheduled", label: "Programados", count: 0, tone: "neutral" as const },
+  { id: "posted", label: "Publicados", count: 2, tone: "good" as const },
+];
+
+export const funnel = [
+  { stage: "Impresiones 7d", value: 4200, pct: 100 },
+  { stage: "Engagements", value: 186, pct: 44 },
+  { stage: "Profile visits", value: 52, pct: 28 },
+  { stage: "DMs / replies calif.", value: 6, pct: 12 },
+  { stage: "Leads high-ticket", value: 1, pct: 6 },
 ];
 
 export const areas: ContentArea[] = [
@@ -50,98 +57,159 @@ export const areas: ContentArea[] = [
     id: "a1",
     code: "A1",
     name: "Solvers en la calle",
-    description: "Builds, clientes, sistemas, metas del studio.",
+    description: "Casos reales del studio: antes → fricción → sistema → después.",
     priority: "core",
-    weeklyTarget: "2–3",
+    weeklyTarget: 2,
+    doneThisWeek: 0,
   },
   {
     id: "a2",
     code: "A2",
-    name: "Roadblocks & no-aciertos",
-    description: "Fricciones reales y cómo se destrabaron.",
+    name: "Roadblocks / no-aciertos",
+    description: "Bloqueos y errores con lección usable.",
     priority: "core",
-    weeklyTarget: "1–2",
+    weeklyTarget: 1,
+    doneThisWeek: 0,
   },
   {
     id: "a3",
     code: "A3",
-    name: "Middleware aburrido que paga",
-    description: "Integraciones, ROI, procesos feos con resultado.",
+    name: "Middleware aburrido",
+    description: "Donde está la plata: copy-paste, listings, glue.",
     priority: "core",
-    weeklyTarget: "1–2",
+    weeklyTarget: 1,
+    doneThisWeek: 1,
   },
   {
     id: "a4",
     code: "A4",
     name: "Cierre alto ticket",
-    description: "Discovery, objeciones, quién sí/no es cliente.",
-    priority: "core",
-    weeklyTarget: "1",
+    description: "Calificación y cierre sin postureo.",
+    priority: "growth",
+    weeklyTarget: 1,
+    doneThisWeek: 0,
   },
   {
     id: "a5",
     code: "A5",
     name: "Tools con criterio",
-    description: "Sirvió / no sirvió. Sin review de YouTuber.",
+    description: "Experiencia real con herramientas (qué sirve / qué quema).",
     priority: "growth",
-    weeklyTarget: "1",
+    weeklyTarget: 1,
+    doneThisWeek: 1,
   },
   {
     id: "a6",
     code: "A6",
-    name: "Anti-hype con base",
-    description: "Cortar humo del mercado con experiencia real.",
-    priority: "growth",
-    weeklyTarget: "1",
-  },
-  {
-    id: "a7",
-    code: "A7",
-    name: "Preguntas que abren red",
-    description: "Preguntas de operador, no bait vacío.",
-    priority: "growth",
-    weeklyTarget: "2",
-  },
-  {
-    id: "a9",
-    code: "A9",
-    name: "Reply / Quote radar",
-    description: "Distribución: replies de valor en el nicho.",
-    priority: "growth",
-    weeklyTarget: "10–15",
+    name: "Anti-hype + playbooks",
+    description: "Takes con base + checklists que la gente guarda.",
+    priority: "support",
+    weeklyTarget: 1,
+    doneThisWeek: 0,
   },
 ];
 
-export const drafts: Draft[] = [
+export const drafts = [
   {
     id: "d1",
     title: "La tool que me quemó la cuenta en un prompt",
-    area: "A5/A6",
-    status: "pending",
-    language: "ES",
     preview:
-      "Una tool me quemó la cuenta con un solo prompt. La única vez que “sirvió” fue porque ruteó a un modelo top. No es magia: es routing, cuotas y plata escondida.",
-    source: "Reply real a @freddier",
+      "Una sola tool, un prompt, y se fue la cuenta. No fue el modelo. Fue el middleware con permisos de más…",
+    status: "pending" as DraftStatus,
+    language: "ES",
+    area: "A5 Tools",
+    source: "post real + reframe Solvers",
     updatedAt: "2026-07-09",
+    score: 82,
   },
 ];
 
-export const weekly = [
-  { day: "Jue", item: "Tool que quemó la cuenta", state: "pending" },
-  { day: "Vie", item: "Claude one-shot sitio Solvers", state: "needs details" },
-  { day: "Sáb", item: "Pregunta: WhatsApp + Excel", state: "draftable" },
-  { day: "Dom", item: "Middleware aburrido", state: "blocked on proof" },
-  { day: "Lun", item: "Hermes vs OpenClaw roadblock", state: "needs voice" },
-  { day: "Mar", item: "Reply day intensivo", state: "ongoing" },
-  { day: "Mié", item: "Qué hace un agentic ops studio", state: "needs voice" },
+export const calendar = [
+  { day: "Lun 7", posts: 0, replies: 2, focus: "Scout + replies" },
+  { day: "Mar 8", posts: 1, replies: 1, focus: "Tool take" },
+  { day: "Mié 9", posts: 0, replies: 1, focus: "Mission Control" },
+  { day: "Jue 10", posts: 0, replies: 0, focus: "Caso Solvers (bloqueado)" },
+  { day: "Vie 11", posts: 0, replies: 0, focus: "Roadblock draft" },
+  { day: "Sáb 12", posts: 0, replies: 0, focus: "Light / optional" },
+  { day: "Dom 13", posts: 1, replies: 0, focus: "Weekly recap" },
 ];
 
-export const processes = [
-  "Daily pulse: posts, likes, timeline, mentions → 1–3 propuestas",
-  "Captura Valentin → caso/roadblock/close/tool → draft",
-  "Scout creadores → solo mecanismos → remix Solvers",
-  "Publish solo desde approved + log métricas",
-  "Weekly review: qué sonó a robot vs qué pegó",
+export const scheduleSlots = [
+  {
+    id: "s1",
+    when: "Hoy · 18:00",
+    title: "Tool que quemó la cuenta",
+    status: "needs_approve" as const,
+    channel: "X post",
+  },
+  {
+    id: "s2",
+    when: "Jue · 10:30",
+    title: "Caso Solvers (falta captura)",
+    status: "blocked" as const,
+    channel: "X post",
+  },
+  {
+    id: "s3",
+    when: "Vie · 12:00",
+    title: "Reply batch AI/ops (10)",
+    status: "planned" as const,
+    channel: "Replies",
+  },
+  {
+    id: "s4",
+    when: "Dom · 17:00",
+    title: "Recap semanal factory",
+    status: "planned" as const,
+    channel: "X post",
+  },
+];
+
+export const automations = [
+  {
+    id: "auto-pulse",
+    name: "Daily pulse",
+    desc: "Lee likes/timeline + propone 1–3 piezas",
+    enabled: false,
+    cadence: "cada día 08:30",
+  },
+  {
+    id: "auto-scout",
+    name: "Creator scout",
+    desc: "Mecanismos de 8–15 creators → signal cards",
+    enabled: false,
+    cadence: "3× semana",
+  },
+  {
+    id: "auto-draft",
+    name: "Draft factory",
+    desc: "De capturas → drafts en tu voz",
+    enabled: true,
+    cadence: "on capture",
+  },
+  {
+    id: "auto-post",
+    name: "Auto-publish",
+    desc: "Publica cola approved vía xurl",
+    enabled: false,
+    cadence: "OFF hasta estable",
+  },
+];
+
+export const weeklyGoals = [
+  { label: "Posts core", current: 2, target: 5 },
+  { label: "Replies valor", current: 4, target: 15 },
+  { label: "Capturas Solvers", current: 0, target: 3 },
+  { label: "Drafts aprobados", current: 0, target: 5 },
+];
+
+export const weekly = [
+  { day: "Lun", item: "Scout mecanismos + 5 replies", state: "done" },
+  { day: "Mar", item: "Draft tools / anti-hype", state: "pending" },
+  { day: "Mié", item: "Mission Control live", state: "done" },
+  { day: "Jue", item: "Caso Solvers (captura)", state: "blocked · needs voice" },
+  { day: "Vie", item: "Cierre / calificación take", state: "planned" },
+  { day: "Dom", item: "Recap semanal", state: "planned" },
 ];
 
 export const infra = {
@@ -150,4 +218,13 @@ export const infra = {
   supabaseProject: "violetaAI",
   xAccount: "@valentinflrz",
   hermesPath: "~/solvers-x-engine",
+  demoUrl: "https://dashvalentinsolvers.vercel.app",
 };
+
+export const processes = [
+  "P1 Daily pulse → propuestas en Mission Control",
+  "P2 Captura real Solvers → draft humano",
+  "P3 Scout creadores → mecanismos (no copiar texto)",
+  "P4 Approve (SÍ/NO/CAMBIAR) → schedule → xurl",
+  "P5 Métricas 24h/72h → ajustar áreas",
+];
