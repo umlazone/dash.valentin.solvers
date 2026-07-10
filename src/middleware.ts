@@ -5,7 +5,7 @@ import {
 } from "@/lib/auth/session-token";
 import { verifyMiddlewareSession } from "@/lib/auth/middleware-session";
 
-const PUBLIC_PREFIXES = ["/api/auth/", "/_next/", "/favicon.ico"];
+const PUBLIC_PREFIXES = ["/api/auth/", "/api/telegram/", "/_next/", "/favicon.ico"];
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
