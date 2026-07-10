@@ -4,6 +4,7 @@ import {
   buildRegistrationOptions,
   decodePublicKey,
   encodePublicKey,
+  REGISTRATION_REQUIRE_USER_VERIFICATION,
 } from "@/lib/auth/webauthn";
 
 const config = {
@@ -13,7 +14,7 @@ const config = {
 };
 
 describe("WebAuthn passkey options", () => {
-  it("requires verified local-device registration", async () => {
+  it("prefers device verification during OTP-authorized registration", async () => {
     const options = await buildRegistrationOptions(config, [
       { id: "existing-credential", transports: ["internal"] },
     ]);
@@ -22,10 +23,11 @@ describe("WebAuthn passkey options", () => {
     expect(options.rp.name).toBe(config.rpName);
     expect(options.authenticatorSelection).toMatchObject({
       residentKey: "required",
-      userVerification: "required",
+      userVerification: "preferred",
     });
     expect(options.attestation).toBe("none");
     expect(options.excludeCredentials?.[0]?.id).toBe("existing-credential");
+    expect(REGISTRATION_REQUIRE_USER_VERIFICATION).toBe(false);
   });
 
   it("requires user verification for passkey login", async () => {

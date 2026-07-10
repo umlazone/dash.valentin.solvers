@@ -5,6 +5,8 @@ import {
   type Base64URLString,
 } from "@simplewebauthn/server";
 
+export const REGISTRATION_REQUIRE_USER_VERIFICATION = false;
+
 export type WebAuthnConfig = {
   rpName: string;
   rpId: string;
@@ -33,7 +35,7 @@ export async function buildRegistrationOptions(
     attestationType: "none",
     authenticatorSelection: {
       residentKey: "required",
-      userVerification: "required",
+      userVerification: "preferred",
     },
     preferredAuthenticatorType: "localDevice",
     excludeCredentials: existing.map((credential) => ({

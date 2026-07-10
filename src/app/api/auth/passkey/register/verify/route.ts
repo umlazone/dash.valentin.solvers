@@ -9,7 +9,10 @@ import {
   OperatorAuthError,
   requireOperator,
 } from "@/lib/auth/operator-session";
-import { encodePublicKey } from "@/lib/auth/webauthn";
+import {
+  encodePublicKey,
+  REGISTRATION_REQUIRE_USER_VERIFICATION,
+} from "@/lib/auth/webauthn";
 import { createWebAuthnStore } from "@/lib/auth/webauthn-store";
 
 export const runtime = "nodejs";
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
       expectedChallenge: savedChallenge.challenge,
       expectedOrigin: config.webAuthnOrigin,
       expectedRPID: config.webAuthnRpId,
-      requireUserVerification: true,
+      requireUserVerification: REGISTRATION_REQUIRE_USER_VERIFICATION,
     });
     if (!verification.verified) {
       return NextResponse.json(
