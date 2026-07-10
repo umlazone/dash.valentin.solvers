@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSupabaseService, getSupabaseAnon } from "@/lib/supabase";
+import { getSupabaseService } from "@/lib/supabase";
+import {
+  OperatorAuthError,
+  requireOperator,
+} from "@/lib/auth/operator-session";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(req: Request) {
   try {
+    await requireOperator();
     const body = await req.json();
     const id = body?.id as string | undefined;
     const status = body?.status as string | undefined;
@@ -18,7 +23,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "invalid status" }, { status: 400 });
     }
 
-    const sb = getSupabaseService() || getSupabaseAnon();
+    const sb = getSupabaseService();
     if (!sb) {
       return NextResponse.json(
         { error: "supabase not configured" },
@@ -38,6 +43,9 @@ export async function PATCH(req: Request) {
     }
     return NextResponse.json({ ok: true, draft: data });
   } catch (e) {
+    if (e instanceof OperatorAuthError) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
     const message = e instanceof Error ? e.message : "patch_failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
