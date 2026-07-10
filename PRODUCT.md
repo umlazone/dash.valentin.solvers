@@ -1,30 +1,38 @@
-# Product
+# Product — Solvers Agency OS
 
 ## Register
 product
 
-## Users
-Valentin Florez / Solvers operators. Need a Mission Control to run the X content factory: status, areas, drafts to approve, weekly plan, infra. High-ticket AI ops studio, not a consumer app.
+## User
+Valentin Florez operates Solvers and its content engine. He needs to see what the agency is doing, what is blocked, what is ready to publish, and which action unlocks the most momentum — without reading a report.
 
-## Product Purpose
-Make the content factory operable in under 2 minutes: know phase, approve/reject drafts, see week's plan, trust the stack is connected.
+## Single job
+Turn the Solvers content factory into an operating system that can be read in 10 seconds and worked from directly.
 
-## Brand Personality
-Direct, dense, operator-grade. Solvers: "Agents do the work. We build the systems."
+## Core loop
+Capture → interpret → create → approve → schedule → publish → learn.
+
+## Brand personality
+Decisive, precise, high-agency. Black/white, editorial discipline, no AI-dashboard theatre. Spanish-first operational copy.
 
 ## Platform
 web
 
-## Anti-references
-- Cyan/neon AI dashboards
-- Glassmorphism + purple gradients
-- SaaS marketing chrome inside the app
-- Nested card spam
-- Decorative 01/02/03 markers
+## Quality bar
+Flagship internal product. It should look credible on a large studio screen and still remain usable on a phone.
 
-## Design Principles
-1. Product UI, not landing page
-2. Monochrome Vercel/X discipline
-3. State must be readable at a glance
-4. Every label is operational, not marketing
-5. One signature: quiet monochrome density
+## Anti-references
+- Centered SaaS landing pages with KPI card rows
+- Nested card grids
+- Neon/cyan/purple “AI” styling
+- Decorative gradients and glowing particles
+- Equal visual weight for every metric
+- Infrastructure terminology where user actions belong
+
+## Principles
+1. **Priority before completeness.** The next action is always more visible than secondary analytics.
+2. **Fullscreen operating canvas.** Edge-to-edge shell, not a centered marketing container.
+3. **One narrative per view.** Command, Production, Calendar, Review, Systems.
+4. **Spanish operations language.** Labels describe what Valentin controls.
+5. **Live data declares its freshness.** Source and sync time stay visible without becoming badges everywhere.
+6. **Publishing remains gated.** Approval is a deliberate primary action; auto-post stays visibly off.
