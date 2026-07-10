@@ -3,29 +3,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
-  Bot,
   CalendarDays,
-  Check,
   ChevronDown,
-  CircleDot,
-  Command,
   FileText,
   LayoutDashboard,
-  MessageSquareText,
   Plus,
-  Radio,
   RefreshCw,
   Search,
   Settings2,
   Sparkles,
   Workflow,
-  X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { ArcGauge, HorizonChart, MicroLine } from "@/components/agency-charts";
 import { LogoutButton } from "@/components/logout-button";
+import {
+  FactoryCalendarPanel,
+  FactoryProductionPanel,
+  FactoryReviewPanel,
+  FactorySystemsPanel,
+} from "@/components/factory-workspace";
 import type { LiveBundle } from "@/lib/live";
+import { emptyFactorySnapshot } from "@/lib/factory/types";
 import * as seed from "@/lib/data";
 
 const nav: Array<{ id: ViewId; label: string; icon: LucideIcon }> = [
@@ -88,6 +87,7 @@ function fallbackBundle(): LiveBundle {
     automations: seed.automations,
     pipeline: seed.pipeline,
     weeklyGoals: seed.weeklyGoals,
+    factory: emptyFactorySnapshot,
   };
 }
 
@@ -479,266 +479,6 @@ function CommandView({ data, weeklyPct }: { data: LiveBundle; weeklyPct: number 
   );
 }
 
-function ProductionView({ data }: { data: LiveBundle }) {
-  const capture = data.pipeline.find((stage) => stage.id === "capture")?.count || 0;
-  const posted = data.pipeline.find((stage) => stage.id === "posted")?.count || 0;
-  return (
-    <>
-      <ViewHeading view="production" />
-      <section className="operating-horizon">
-        <div className="operating-horizon__top">
-          <div className="horizon-thesis">
-            <div>
-              <div className="section-kicker">Factory velocity</div>
-              <div className="horizon-thesis__copy">
-                {posted} salidas <span>desde {capture} capturas.</span>
-              </div>
-            </div>
-            <p className="horizon-thesis__note">
-              La fábrica gana cuando el aprendizaje del día entra al sistema antes de que se enfríe.
-            </p>
-          </div>
-          <div className="horizon-data">
-            <HorizonChart data={data.sparkEngagement} label="Señal de engagement" />
-            <div className="horizon-metrics">
-              {data.pipeline.slice(0, 4).map((metric) => (
-                <div className="horizon-metric" key={metric.id}>
-                  <div className="horizon-metric__label">{metric.label}</div>
-                  <div className="horizon-metric__value">{metric.count}</div>
-                  <div className="horizon-metric__hint">current queue</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading meta="Pipeline" title="Flujo de trabajo" />
-        <ProductionFlow data={data} />
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading meta="Coverage" title="Áreas que alimentan la fábrica" />
-        <AreaRows data={data} />
-      </section>
-    </>
-  );
-}
-
-function CalendarView({ data }: { data: LiveBundle }) {
-  const totalPosts = data.calendar.reduce((sum, day) => sum + day.posts, 0);
-  const totalReplies = data.calendar.reduce((sum, day) => sum + day.replies, 0);
-  return (
-    <>
-      <ViewHeading view="calendar" />
-      <section className="operating-horizon">
-        <div className="operating-horizon__top">
-          <div className="horizon-thesis">
-            <div>
-              <div className="section-kicker">Editorial runway</div>
-              <div className="horizon-thesis__copy">
-                {totalPosts} posts <span>+ {totalReplies} replies.</span>
-              </div>
-            </div>
-            <p className="horizon-thesis__note">
-              La cadencia objetivo es 5 posts core y 15 replies de valor por semana.
-            </p>
-          </div>
-          <div className="horizon-data">
-            <HorizonChart data={data.sparkPosts} label="Cadencia de publicación" />
-            <div className="horizon-metrics">
-              {data.weeklyGoals.map((goal) => (
-                <div className="horizon-metric" key={goal.label}>
-                  <div className="horizon-metric__label">{goal.label}</div>
-                  <div className="horizon-metric__value">
-                    {goal.current}/{goal.target}
-                  </div>
-                  <div className="horizon-metric__hint">week target</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading meta="Week 28" title="Mapa de distribución" />
-        <WeeklySchedule data={data} />
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading meta="Queue" title="Programación y bloqueos" />
-        <Runway data={data} />
-      </section>
-    </>
-  );
-}
-
-function ReviewView({
-  data,
-  selectedId,
-  onSelect,
-  busyId,
-  onStatus,
-}: {
-  data: LiveBundle;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  busyId: string | null;
-  onStatus: (id: string, status: string) => Promise<void>;
-}) {
-  const selected = data.drafts.find((draft) => draft.id === selectedId) || data.drafts[0];
-  return (
-    <>
-      <ViewHeading view="review" />
-      {selected ? (
-        <section className="review-layout">
-          <div className="review-list">
-            <div className="section-kicker">Inbox · {data.drafts.length}</div>
-            <div className="mt-4 grid gap-2">
-              {data.drafts.map((draft) => (
-                <button
-                  className="review-list__item"
-                  data-active={selected.id === draft.id}
-                  key={draft.id}
-                  onClick={() => onSelect(draft.id)}
-                  type="button"
-                >
-                  <StatusLabel status={draft.status} />
-                  <div className="review-list__title">{draft.title}</div>
-                  <div className="mt-2 font-mono text-[9px] text-neutral-600">
-                    {draft.area} · score {draft.score}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <article className="review-editor">
-            <div className="flex flex-wrap items-center gap-4">
-              <StatusLabel status={selected.status} />
-              <span className="section-kicker">{selected.language}</span>
-              <span className="section-kicker">{selected.area}</span>
-            </div>
-            <h2 className="review-editor__headline">{selected.title}</h2>
-            <p className="review-editor__body">{selected.preview}</p>
-            <div className="review-editor__score">
-              <span>Publish readiness</span>
-              <div className="progress-track">
-                <div className="progress-value" style={{ width: `${Math.min(100, selected.score)}%` }} />
-              </div>
-              <strong>{selected.score}/100</strong>
-            </div>
-            <div className="review-editor__actions">
-              <button
-                className="primary-button"
-                disabled={busyId === selected.id}
-                onClick={() => onStatus(selected.id, "approved")}
-                type="button"
-              >
-                <Check size={15} />
-                Aprobar y mover a calendario
-              </button>
-              <button
-                className="quiet-button"
-                disabled={busyId === selected.id}
-                onClick={() => onStatus(selected.id, "pending")}
-                type="button"
-              >
-                <MessageSquareText size={15} />
-                Pedir cambios
-              </button>
-              <button
-                className="icon-button"
-                disabled={busyId === selected.id}
-                onClick={() => onStatus(selected.id, "rejected")}
-                type="button"
-                aria-label="Descartar draft"
-              >
-                <X size={15} />
-              </button>
-            </div>
-          </article>
-        </section>
-      ) : (
-        <section className="operating-horizon p-12 text-center">
-          <FileText className="mx-auto text-neutral-600" size={28} />
-          <h2 className="mt-4 text-lg font-semibold">No hay drafts en revisión</h2>
-          <p className="mt-2 text-sm text-neutral-500">
-            Envía una captura real de Solvers para alimentar la fábrica.
-          </p>
-        </section>
-      )}
-    </>
-  );
-}
-
-function SystemsView({ data }: { data: LiveBundle }) {
-  const integrations = [
-    { name: "X", state: "@valentinflrz", icon: Radio },
-    { name: "xurl", state: "authenticated", icon: Zap },
-    { name: "Hermes", state: "operator online", icon: Bot },
-    { name: "Supabase", state: data.source === "supabase" ? "live" : "fallback", icon: CircleDot },
-    { name: "Vercel", state: "production", icon: Command },
-  ];
-  return (
-    <>
-      <ViewHeading view="systems" />
-      <section className="agency-section mt-0 border-t-0 pt-0">
-        <SectionHeading meta="Infrastructure" title="Live operating chain" />
-        <div className="integration-map">
-          {integrations.map((integration) => {
-            const Icon = integration.icon;
-            return (
-              <div className="integration-node" key={integration.name}>
-                <Icon size={16} strokeWidth={1.7} aria-hidden="true" />
-                <div className="integration-node__name">{integration.name}</div>
-                <div className="integration-node__state">{integration.state}</div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading
-          meta="Automation policy"
-          title="Loops autónomos"
-          action={<StatusLabel status="pending">Auto-post OFF</StatusLabel>}
-        />
-        <div className="system-list">
-          {data.automations.map((automation) => (
-            <div className="system-row" key={automation.id}>
-              <div className="system-row__name">{automation.name}</div>
-              <div className="system-row__description">{automation.desc}</div>
-              <div className="system-row__cadence">{automation.cadence}</div>
-              <div className="toggle" data-enabled={automation.enabled} aria-label={automation.enabled ? "Activo" : "Inactivo"} />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="agency-section">
-        <SectionHeading meta="Safety" title="Reglas de publicación" />
-        <div className="system-list">
-          {[
-            ["Approve gate", "Todo draft requiere aprobación humana", "ON"],
-            ["Auto-post", "Bloqueado hasta estabilizar tono y métricas", "OFF"],
-            ["Credentials", "Tokens fuera de chat y fuera del repo", "SAFE"],
-          ].map(([name, description, state]) => (
-            <div className="system-row" key={name}>
-              <div className="system-row__name">{name}</div>
-              <div className="system-row__description">{description}</div>
-              <div />
-              <StatusLabel status={state === "OFF" ? "pending" : "live"}>{state}</StatusLabel>
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
-  );
-}
-
 function ContextRail({
   data,
   onReview,
@@ -746,7 +486,9 @@ function ContextRail({
   data: LiveBundle;
   onReview: () => void;
 }) {
-  const pendingDraft = data.drafts.find((draft) => draft.status === "pending");
+  const pendingDraft = data.drafts.find((draft) =>
+    ["pending", "draft", "in_review", "changes_requested"].includes(draft.status),
+  );
   const now = useMemo(
     () =>
       new Intl.DateTimeFormat("es-CO", {
@@ -838,8 +580,6 @@ export default function MissionControlPage() {
   const [data, setData] = useState<LiveBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -848,7 +588,6 @@ export default function MissionControlPage() {
       if (!response.ok) throw new Error(`No se pudo cargar data live (${response.status})`);
       const next = (await response.json()) as LiveBundle;
       setData(next);
-      setSelectedDraftId((current) => current || next.drafts[0]?.id || null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo cargar Mission Control");
       setData((current) => current || fallbackBundle());
@@ -864,36 +603,12 @@ export default function MissionControlPage() {
   }, [refresh]);
 
   const live = data || fallbackBundle();
-  const pending = useMemo(
-    () => live.drafts.filter((draft) => draft.status === "pending").length,
-    [live.drafts],
-  );
+  const pending = live.factory.counts.draftsReview;
   const weeklyPct = Math.round(
     (live.weeklyGoals.reduce((sum, goal) => sum + goal.current / Math.max(goal.target, 1), 0) /
       Math.max(live.weeklyGoals.length, 1)) *
       100,
   );
-
-  async function setDraftStatus(id: string, status: string) {
-    setBusyId(id);
-    setError(null);
-    try {
-      const response = await fetch("/api/mc/drafts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || `No se pudo actualizar (${response.status})`);
-      }
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo actualizar el draft");
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   function goReview() {
     setView("review");
@@ -930,18 +645,30 @@ export default function MissionControlPage() {
           ) : (
             <>
               {view === "command" ? <CommandView data={live} weeklyPct={weeklyPct} /> : null}
-              {view === "production" ? <ProductionView data={live} /> : null}
-              {view === "calendar" ? <CalendarView data={live} /> : null}
-              {view === "review" ? (
-                <ReviewView
-                  data={live}
-                  selectedId={selectedDraftId}
-                  onSelect={setSelectedDraftId}
-                  busyId={busyId}
-                  onStatus={setDraftStatus}
-                />
+              {view === "production" ? (
+                <>
+                  <ViewHeading view="production" />
+                  <FactoryProductionPanel data={live.factory} onChanged={refresh} />
+                </>
               ) : null}
-              {view === "systems" ? <SystemsView data={live} /> : null}
+              {view === "calendar" ? (
+                <>
+                  <ViewHeading view="calendar" />
+                  <FactoryCalendarPanel data={live.factory} onChanged={refresh} />
+                </>
+              ) : null}
+              {view === "review" ? (
+                <>
+                  <ViewHeading view="review" />
+                  <FactoryReviewPanel data={live.factory} onChanged={refresh} />
+                </>
+              ) : null}
+              {view === "systems" ? (
+                <>
+                  <ViewHeading view="systems" />
+                  <FactorySystemsPanel data={live.factory} onChanged={refresh} />
+                </>
+              ) : null}
 
               <div className="mobile-context">
                 <section className="agency-section">

@@ -1,4 +1,6 @@
 import { getSupabaseAnon, getSupabaseService } from "@/lib/supabase";
+import { emptyFactorySnapshot, type FactorySnapshot } from "@/lib/factory/types";
+import { loadFactorySnapshot } from "@/lib/factory/store";
 import * as seed from "@/lib/data";
 
 export type LiveBundle = {
@@ -28,6 +30,7 @@ export type LiveBundle = {
   automations: typeof seed.automations;
   pipeline: typeof seed.pipeline;
   weeklyGoals: typeof seed.weeklyGoals;
+  factory: FactorySnapshot;
 };
 
 function asNum(v: unknown, fallback = 0) {
@@ -54,6 +57,7 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
       automations: seed.automations,
       pipeline: seed.pipeline,
       weeklyGoals: seed.weeklyGoals,
+      factory: emptyFactorySnapshot,
     };
   }
 
@@ -66,6 +70,7 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
     scheduleRes,
     autosRes,
     calRes,
+    factory,
   ] = await Promise.all([
     sb.from("mc_status").select("*").eq("id", "default").maybeSingle(),
     sb
@@ -80,6 +85,7 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
     sb.from("mc_schedule").select("*"),
     sb.from("mc_automations").select("*"),
     sb.from("mc_calendar_days").select("*").order("sort_order"),
+    loadFactorySnapshot(sb),
   ]);
 
   const status = statusRes.data;
@@ -102,6 +108,7 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
       automations: seed.automations,
       pipeline: seed.pipeline,
       weeklyGoals: seed.weeklyGoals,
+      factory: emptyFactorySnapshot,
     };
   }
 
@@ -111,8 +118,8 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
   const likes = asNum(metrics?.likes, seed.account.likes);
   const posts7 = asNum(metrics?.posts_7d, 2);
   const replies7 = asNum(metrics?.replies_7d, 4);
-  const pendingDrafts = (draftsRes.data || []).filter(
-    (d) => d.status === "pending",
+  const pendingDrafts = (draftsRes.data || []).filter((d) =>
+    ["pending", "draft", "in_review", "changes_requested"].includes(d.status),
   ).length;
 
   const sparkFollowers = (metrics?.spark_followers as number[]) || seed.sparkFollowers;
@@ -205,23 +212,16 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
     focus: c.focus || "",
   }));
 
-  // recompute pipeline draft count from live drafts
-  const livePipeline = pipeline.map((p) => {
-    if (p.id === "draft") return { ...p, count: pendingDrafts };
-    if (p.id === "approved")
-      return {
-        ...p,
-        count: drafts.filter((d) => d.status === "approved").length,
-      };
-    if (p.id === "posted")
-      return {
-        ...p,
-        count: Math.max(
-          p.count,
-          drafts.filter((d) => d.status === "posted").length,
-        ),
-      };
-    return p;
+  const livePipeline = pipeline.map((stage) => {
+    const counts: Record<string, number> = {
+      capture: factory.counts.capturesNew,
+      scout: factory.counts.signalsNew,
+      draft: factory.counts.draftsReview,
+      approved: factory.counts.approved,
+      scheduled: factory.counts.scheduled,
+      posted: factory.counts.published,
+    };
+    return counts[stage.id] === undefined ? stage : { ...stage, count: counts[stage.id] };
   });
 
   const weeklyGoals = [
@@ -288,9 +288,28 @@ export async function loadLiveBundle(): Promise<LiveBundle> {
     areas: areas.length ? areas : seed.areas,
     drafts: drafts.length ? drafts : seed.drafts,
     calendar: calendar.length ? calendar : seed.calendar,
-    scheduleSlots: scheduleSlots.length ? scheduleSlots : seed.scheduleSlots,
+    scheduleSlots: factory.publications.length
+      ? factory.publications.slice(0, 8).map((publication) => ({
+          id: publication.id,
+          when: new Date(publication.scheduledFor).toLocaleString("es-CO", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "America/Bogota",
+          }),
+          title:
+            factory.drafts.find((draft) => draft.id === publication.draftId)?.title ||
+            "Publicación programada",
+          status: publication.status as "needs_approve" | "blocked" | "planned",
+          channel: "X post",
+        }))
+      : scheduleSlots.length
+        ? scheduleSlots
+        : seed.scheduleSlots,
     automations: automations.length ? automations : seed.automations,
     pipeline: livePipeline.length ? livePipeline : seed.pipeline,
     weeklyGoals,
+    factory,
   };
 }
