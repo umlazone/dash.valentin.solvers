@@ -2,27 +2,28 @@ import { generateOtp, hashOtp } from "@/lib/auth/otp";
 import type { AuthFactor } from "@/lib/auth/session-token";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
+const ENROLLMENT_GRANT_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type OtpRepository = {
-  canRequest(ipHash: string, now: string): Promise<boolean>;
-  createChallenge(input: {
+  reserveChallenge(input: {
     id: string;
     codeHash: string;
     expiresAt: string;
-    ipHash?: string;
-    createdAt?: string;
-  }): Promise<void>;
+    ipHash: string;
+    now: string;
+  }): Promise<boolean>;
   discardChallenge(id: string): Promise<void>;
   consumeIfValid(input: {
     id: string;
     codeHash: string;
     now: string;
   }): Promise<boolean>;
-  createSession(input: {
+  createSessionWithEnrollmentGrant(input: {
     id: string;
     factor: AuthFactor;
     expiresAt: string;
+    enrollmentGrant: { id: string; expiresAt: string };
   }): Promise<void>;
 };
 
@@ -51,19 +52,18 @@ type RequestOtpInput = {
 
 export async function requestTelegramOtp(input: RequestOtpInput) {
   const now = input.now ?? new Date();
-  const nowIso = now.toISOString();
-  if (!(await input.repository.canRequest(input.ipHash, nowIso))) {
-    throw new OtpFlowError("rate_limited", "OTP request rate limited");
-  }
   const challengeId = input.idFactory?.() ?? crypto.randomUUID();
   const code = (input.generateCode ?? generateOtp)();
-  await input.repository.createChallenge({
+  const reserved = await input.repository.reserveChallenge({
     id: challengeId,
     codeHash: hashOtp(challengeId, code, input.secret),
     expiresAt: new Date(now.getTime() + OTP_TTL_MS).toISOString(),
     ipHash: input.ipHash,
-    createdAt: nowIso,
+    now: now.toISOString(),
   });
+  if (!reserved) {
+    throw new OtpFlowError("rate_limited", "OTP request rate limited");
+  }
   try {
     await input.send(code);
   } catch {
@@ -96,11 +96,18 @@ export async function verifyTelegramOtp(input: VerifyOtpInput) {
     throw new OtpFlowError("invalid_or_expired", "Invalid or expired code");
   }
   const sessionId = input.idFactory?.() ?? crypto.randomUUID();
+  const enrollmentGrantId = input.idFactory?.() ?? crypto.randomUUID();
   const factor = "telegram_otp" as const;
-  await input.repository.createSession({
+  await input.repository.createSessionWithEnrollmentGrant({
     id: sessionId,
     factor,
     expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
+    enrollmentGrant: {
+      id: enrollmentGrantId,
+      expiresAt: new Date(
+        now.getTime() + ENROLLMENT_GRANT_TTL_MS,
+      ).toISOString(),
+    },
   });
-  return { sessionId, factor };
+  return { sessionId, factor, enrollmentGrantId };
 }

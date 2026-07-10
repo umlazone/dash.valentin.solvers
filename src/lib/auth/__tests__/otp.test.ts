@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateOtp, hashOtp, hashRequestIdentity, verifyOtpHash } from "@/lib/auth/otp";
+import { generateOtp, hashOtp, hashRequestIp, verifyOtpHash } from "@/lib/auth/otp";
 
 const secret = "test-secret-that-is-longer-than-thirty-two-bytes";
 
@@ -26,11 +26,13 @@ describe("Telegram OTP primitives", () => {
     expect(verifyOtpHash(digest, "challenge-b", "123456", secret)).toBe(false);
   });
 
-  it("stores a one-way request identity instead of a raw IP", () => {
-    const value = hashRequestIdentity("203.0.113.10", "Safari", secret);
+  it("hashes the trusted IP without an attacker-controlled user agent", () => {
+    const first = hashRequestIp("203.0.113.10", secret);
+    const same = hashRequestIp("203.0.113.10", secret);
+    const otherIp = hashRequestIp("203.0.113.11", secret);
 
-    expect(value).not.toContain("203.0.113.10");
-    expect(value).toBe(hashRequestIdentity("203.0.113.10", "Safari", secret));
-    expect(value).not.toBe(hashRequestIdentity("203.0.113.11", "Safari", secret));
+    expect(first).toBe(same);
+    expect(first).not.toContain("203.0.113.10");
+    expect(first).not.toBe(otherIp);
   });
 });

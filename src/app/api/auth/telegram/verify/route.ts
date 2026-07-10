@@ -48,13 +48,10 @@ export async function POST(request: Request) {
       },
       config.authSecret,
     );
-    const { count, error } = await client
-      .from("mc_passkeys")
-      .select("id", { count: "exact", head: true });
-    if (error) throw new Error("Passkey lookup failed");
     const response = NextResponse.json({
       ok: true,
-      needsPasskey: (count ?? 0) === 0,
+      needsPasskey: true,
+      passkeyEnrollmentExpiresIn: 600,
     });
     response.cookies.set(
       SESSION_COOKIE,

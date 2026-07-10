@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ArcGauge, HorizonChart, MicroLine } from "@/components/agency-charts";
+import { LogoutButton } from "@/components/logout-button";
 import type { LiveBundle } from "@/lib/live";
 import * as seed from "@/lib/data";
 
@@ -200,6 +201,7 @@ function AgencyRail({
           <span className="live-dot" />
           {source === "supabase" ? "Supabase live" : "Fallback data"}
         </div>
+        <LogoutButton />
       </div>
     </aside>
   );

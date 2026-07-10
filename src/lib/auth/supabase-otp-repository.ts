@@ -5,43 +5,16 @@ export function createSupabaseOtpRepository(
   client: SupabaseClient,
 ): OtpRepository {
   return {
-    async canRequest(ipHash, nowIso) {
-      const now = new Date(nowIso);
-      const ipWindow = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
-      const [ipResult, latestResult] = await Promise.all([
-        client
-          .from("mc_auth_challenges")
-          .select("id", { count: "exact", head: true })
-          .eq("kind", "telegram_otp")
-          .eq("ip_hash", ipHash)
-          .gte("created_at", ipWindow),
-        client
-          .from("mc_auth_challenges")
-          .select("created_at")
-          .eq("kind", "telegram_otp")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-      if (ipResult.error) throw new Error("OTP rate limit lookup failed");
-      if (latestResult.error) throw new Error("OTP cooldown lookup failed");
-      if ((ipResult.count ?? 0) >= 3) return false;
-      const latest = latestResult.data?.created_at
-        ? new Date(latestResult.data.created_at).getTime()
-        : 0;
-      return !latest || now.getTime() - latest >= 30_000;
-    },
-
-    async createChallenge(input) {
-      const { error } = await client.from("mc_auth_challenges").insert({
-        id: input.id,
-        kind: "telegram_otp",
-        code_hash: input.codeHash,
-        expires_at: input.expiresAt,
-        ip_hash: input.ipHash,
-        created_at: input.createdAt,
+    async reserveChallenge(input) {
+      const { data, error } = await client.rpc("mc_reserve_otp_challenge", {
+        p_id: input.id,
+        p_code_hash: input.codeHash,
+        p_ip_hash: input.ipHash,
+        p_expires_at: input.expiresAt,
+        p_now: input.now,
       });
-      if (error) throw new Error("OTP challenge creation failed");
+      if (error) throw new Error("OTP reservation failed");
+      return data === true;
     },
 
     async discardChallenge(id) {
@@ -62,13 +35,17 @@ export function createSupabaseOtpRepository(
       return data === true;
     },
 
-    async createSession(input) {
-      const { error } = await client.from("mc_sessions").insert({
-        id: input.id,
-        factor: input.factor,
-        expires_at: input.expiresAt,
-      });
-      if (error) throw new Error("Session creation failed");
+    async createSessionWithEnrollmentGrant(input) {
+      const { data, error } = await client.rpc(
+        "mc_create_otp_session_with_grant",
+        {
+          p_session_id: input.id,
+          p_session_expires_at: input.expiresAt,
+          p_grant_id: input.enrollmentGrant.id,
+          p_grant_expires_at: input.enrollmentGrant.expiresAt,
+        },
+      );
+      if (error || data !== true) throw new Error("Session creation failed");
     },
   };
 }

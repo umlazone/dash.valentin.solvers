@@ -10,14 +10,8 @@ export function hashOtp(challengeId: string, code: string, secret: string) {
     .digest("hex");
 }
 
-export function hashRequestIdentity(
-  ip: string,
-  userAgent: string,
-  secret: string,
-) {
-  return createHmac("sha256", secret)
-    .update(`${ip}|${userAgent}`)
-    .digest("hex");
+export function hashRequestIp(ip: string, secret: string) {
+  return createHmac("sha256", secret).update(ip).digest("hex");
 }
 
 export function verifyOtpHash(

@@ -3,6 +3,7 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
 } from "@/lib/auth/session-token";
+import { verifyMiddlewareSession } from "@/lib/auth/middleware-session";
 
 const PUBLIC_PREFIXES = ["/api/auth/", "/_next/", "/favicon.ico"];
 
@@ -13,7 +14,18 @@ export async function middleware(request: NextRequest) {
   }
   const secret = process.env.MC_AUTH_SECRET;
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const valid = secret ? await verifySessionToken(token || "", secret) : null;
+  const payload = secret
+    ? await verifySessionToken(token || "", secret)
+    : null;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const valid =
+    payload && supabaseUrl && serviceRoleKey
+      ? await verifyMiddlewareSession(payload, {
+          supabaseUrl,
+          serviceRoleKey,
+        })
+      : false;
 
   if (path === "/login") {
     return valid

@@ -24,7 +24,20 @@ export async function POST() {
     const client = getSupabaseService();
     if (!client) throw new Error("Supabase service unavailable");
     const store = createWebAuthnStore(client);
+    const grant = await store.findEnrollmentGrant(session.sid);
+    if (!grant) {
+      return NextResponse.json(
+        { error: "Recent Telegram verification required" },
+        { status: 403 },
+      );
+    }
     const passkeys = await store.listPasskeys();
+    if (passkeys.length >= 5) {
+      return NextResponse.json(
+        { error: "Passkey device limit reached" },
+        { status: 409 },
+      );
+    }
     const options = await buildRegistrationOptions(
       {
         rpName: config.webAuthnRpName,
@@ -42,7 +55,7 @@ export async function POST() {
       kind: "passkey_register",
       challenge: options.challenge,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-      metadata: { sessionId: session.sid },
+      metadata: { sessionId: session.sid, grantId: grant.id },
     });
     return NextResponse.json({ ok: true, challengeId, options });
   } catch (error) {

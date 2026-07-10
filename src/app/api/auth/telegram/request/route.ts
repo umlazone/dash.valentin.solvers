@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseService } from "@/lib/supabase";
-import { hashRequestIdentity } from "@/lib/auth/otp";
+import { hashRequestIp } from "@/lib/auth/otp";
+import { trustedClientIp } from "@/lib/auth/request-ip";
 import { readAuthConfig } from "@/lib/auth/config";
 import {
   OtpFlowError,
@@ -17,10 +18,8 @@ export async function POST(request: Request) {
     const config = readAuthConfig();
     const client = getSupabaseService();
     if (!client) throw new Error("Supabase service unavailable");
-    const forwarded = request.headers.get("x-forwarded-for") || "unknown";
-    const ip = forwarded.split(",")[0]?.trim() || "unknown";
-    const agent = request.headers.get("user-agent") || "unknown";
-    const ipHash = hashRequestIdentity(ip, agent, config.authSecret);
+    const ip = trustedClientIp(request.headers);
+    const ipHash = hashRequestIp(ip, config.authSecret);
     const result = await requestTelegramOtp({
       repository: createSupabaseOtpRepository(client),
       send: (code) => sendTelegramOtp(config, code),

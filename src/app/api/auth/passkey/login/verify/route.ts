@@ -69,12 +69,19 @@ export async function POST(request: Request) {
       );
     }
     const info = verification.authenticationInfo;
-    await store.updatePasskey({
+    const counterUpdated = await store.updatePasskey({
       credentialId: passkey.credential_id,
-      counter: info.newCounter,
+      oldCounter: Number(passkey.counter),
+      newCounter: info.newCounter,
       deviceType: info.credentialDeviceType,
       backedUp: info.credentialBackedUp,
     });
+    if (!counterUpdated) {
+      return NextResponse.json(
+        { error: "Passkey verification failed" },
+        { status: 401 },
+      );
+    }
     const sessionId = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
     await store.createSession({

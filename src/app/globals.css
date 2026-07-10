@@ -252,6 +252,44 @@ button {
   text-transform: uppercase;
 }
 
+.logout-control {
+  margin-top: 10px;
+}
+
+.logout-button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+  transition: color 160ms var(--ease-out);
+}
+
+.logout-button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.logout-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.logout-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .live-dot {
   width: 6px;
   height: 6px;

@@ -8,21 +8,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function POST() {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  const secret = process.env.MC_AUTH_SECRET;
-  const client = getSupabaseService();
-  if (token && secret && client) {
-    const payload = await verifySessionToken(token, secret);
-    if (payload) {
-      await client
-        .from("mc_sessions")
-        .update({ revoked_at: new Date().toISOString() })
-        .eq("id", payload.sid);
-    }
-  }
-  const response = NextResponse.json({ ok: true });
+function clearSessionCookie(response: NextResponse) {
   response.cookies.set(SESSION_COOKIE, "", {
     httpOnly: true,
     secure: true,
@@ -31,4 +17,44 @@ export async function POST() {
     maxAge: 0,
   });
   return response;
+}
+
+export async function POST() {
+  try {
+    const store = await cookies();
+    const token = store.get(SESSION_COOKIE)?.value;
+    const secret = process.env.MC_AUTH_SECRET;
+    const client = getSupabaseService();
+    if (!token || !secret || !client) {
+      return clearSessionCookie(
+        NextResponse.json({ ok: false }, { status: 401 }),
+      );
+    }
+    const payload = await verifySessionToken(token, secret);
+    if (!payload) {
+      return clearSessionCookie(
+        NextResponse.json({ ok: false }, { status: 401 }),
+      );
+    }
+    const { data, error } = await client.rpc("mc_revoke_session", {
+      p_id: payload.sid,
+      p_now: new Date().toISOString(),
+    });
+    if (error || data !== true) {
+      return clearSessionCookie(
+        NextResponse.json(
+          { ok: false, error: "revocation_failed" },
+          { status: 503 },
+        ),
+      );
+    }
+    return clearSessionCookie(NextResponse.json({ ok: true }));
+  } catch {
+    return clearSessionCookie(
+      NextResponse.json(
+        { ok: false, error: "revocation_failed" },
+        { status: 503 },
+      ),
+    );
+  }
 }

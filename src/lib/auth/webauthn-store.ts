@@ -77,7 +77,23 @@ export function createWebAuthnStore(client: SupabaseClient) {
       };
     },
 
-    async savePasskey(input: {
+    async findEnrollmentGrant(sessionId: string) {
+      const { data, error } = await client
+        .from("mc_enrollment_grants")
+        .select("id,expires_at")
+        .eq("session_id", sessionId)
+        .is("consumed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error("Enrollment grant lookup failed");
+      return data as { id: string; expires_at: string } | null;
+    },
+
+    async storePasskeyWithGrant(input: {
+      grantId: string;
+      sessionId: string;
       credentialId: string;
       publicKey: string;
       counter: number;
@@ -85,33 +101,59 @@ export function createWebAuthnStore(client: SupabaseClient) {
       deviceType: string;
       backedUp: boolean;
     }) {
-      const { error } = await client.from("mc_passkeys").insert({
-        credential_id: input.credentialId,
-        public_key: input.publicKey,
-        counter: input.counter,
-        transports: input.transports,
-        device_type: input.deviceType,
-        backed_up: input.backedUp,
+      const { data, error } = await client.rpc("mc_store_passkey_with_grant", {
+        p_grant_id: input.grantId,
+        p_session_id: input.sessionId,
+        p_credential_id: input.credentialId,
+        p_public_key: input.publicKey,
+        p_counter: input.counter,
+        p_transports: input.transports,
+        p_device_type: input.deviceType,
+        p_backed_up: input.backedUp,
+        p_now: new Date().toISOString(),
       });
       if (error) throw new Error("Passkey storage failed");
+      return data === true;
+    },
+
+    async reserveLoginChallenge(input: {
+      id: string;
+      challenge: string;
+      ipHash: string;
+      expiresAt: string;
+      now: string;
+    }) {
+      const { data, error } = await client.rpc(
+        "mc_reserve_webauthn_login_challenge",
+        {
+          p_id: input.id,
+          p_challenge: input.challenge,
+          p_ip_hash: input.ipHash,
+          p_expires_at: input.expiresAt,
+          p_now: input.now,
+        },
+      );
+      if (error) throw new Error("Passkey challenge creation failed");
+      return data === true;
     },
 
     async updatePasskey(input: {
       credentialId: string;
-      counter: number;
+      oldCounter: number;
+      newCounter: number;
       deviceType: string;
       backedUp: boolean;
     }) {
-      const { error } = await client
-        .from("mc_passkeys")
-        .update({
-          counter: input.counter,
-          device_type: input.deviceType,
-          backed_up: input.backedUp,
-          last_used_at: new Date().toISOString(),
-        })
-        .eq("credential_id", input.credentialId);
+      const { data, error } = await client.rpc("mc_update_passkey_counter", {
+        p_credential_id: input.credentialId,
+        p_old_counter: input.oldCounter,
+        p_new_counter: input.newCounter,
+        p_device_type: input.deviceType,
+        p_backed_up: input.backedUp,
+        p_now: new Date().toISOString(),
+      });
       if (error) throw new Error("Passkey counter update failed");
+      return data === true;
     },
 
     async createSession(input: {

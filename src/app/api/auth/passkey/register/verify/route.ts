@@ -14,6 +14,7 @@ import {
   REGISTRATION_REQUIRE_USER_VERIFICATION,
 } from "@/lib/auth/webauthn";
 import { createWebAuthnStore } from "@/lib/auth/webauthn-store";
+import { sendTelegramSecurityNotice } from "@/lib/auth/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,8 @@ export async function POST(request: Request) {
     );
     if (
       !savedChallenge ||
-      savedChallenge.metadata.sessionId !== session.sid
+      savedChallenge.metadata.sessionId !== session.sid ||
+      typeof savedChallenge.metadata.grantId !== "string"
     ) {
       return NextResponse.json(
         { error: "Passkey challenge expired" },
@@ -65,7 +67,9 @@ export async function POST(request: Request) {
       );
     }
     const info = verification.registrationInfo;
-    await store.savePasskey({
+    const stored = await store.storePasskeyWithGrant({
+      grantId: savedChallenge.metadata.grantId,
+      sessionId: session.sid,
       credentialId: info.credential.id,
       publicKey: encodePublicKey(info.credential.publicKey),
       counter: info.credential.counter,
@@ -73,9 +77,25 @@ export async function POST(request: Request) {
       deviceType: info.credentialDeviceType,
       backedUp: info.credentialBackedUp,
     });
+    if (!stored) {
+      return NextResponse.json(
+        { error: "Recent Telegram verification required" },
+        { status: 403 },
+      );
+    }
+    let notificationDelivered = true;
+    try {
+      await sendTelegramSecurityNotice(
+        config,
+        "Nueva passkey registrada para Mission Control.",
+      );
+    } catch {
+      notificationDelivered = false;
+    }
     await store.addEvent("auth.passkey_registered", {
       deviceType: info.credentialDeviceType,
       backedUp: info.credentialBackedUp,
+      notificationDelivered,
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -11,13 +11,14 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
+import { safeRedirectPath } from "@/lib/auth/redirect";
 
 type Phase = "choose" | "otp" | "enroll" | "done";
 
 function safeNext() {
   if (typeof window === "undefined") return "/";
   const value = new URLSearchParams(window.location.search).get("next") || "/";
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/";
+  return safeRedirectPath(value, window.location.origin);
 }
 
 export default function LoginPage() {

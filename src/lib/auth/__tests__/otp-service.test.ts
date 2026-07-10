@@ -15,23 +15,26 @@ type Challenge = {
 
 class MemoryOtpRepository implements OtpRepository {
   challenges = new Map<string, Challenge>();
-  sessions: Array<{ id: string; factor: string; expiresAt: string }> = [];
+  sessions: Array<{
+    id: string;
+    factor: string;
+    expiresAt: string;
+    enrollmentGrant: { id: string; expiresAt: string };
+  }> = [];
   allowRequest = true;
 
-  async canRequest() {
-    return this.allowRequest;
-  }
-
-  async createChallenge(input: {
+  async reserveChallenge(input: {
     id: string;
     codeHash: string;
     expiresAt: string;
   }) {
+    if (!this.allowRequest) return false;
     this.challenges.set(input.id, {
       ...input,
       attempts: 0,
       consumed: false,
     });
+    return true;
   }
 
   async discardChallenge(id: string) {
@@ -58,10 +61,11 @@ class MemoryOtpRepository implements OtpRepository {
     return true;
   }
 
-  async createSession(input: {
+  async createSessionWithEnrollmentGrant(input: {
     id: string;
     factor: "telegram_otp" | "passkey";
     expiresAt: string;
+    enrollmentGrant: { id: string; expiresAt: string };
   }) {
     this.sessions.push(input);
   }
@@ -71,7 +75,7 @@ const secret = "test-secret-that-is-longer-than-thirty-two-bytes";
 const now = new Date("2026-07-09T20:00:00.000Z");
 
 describe("Telegram OTP flow", () => {
-  it("stores only a hash and sends the plaintext code once", async () => {
+  it("atomically reserves a hashed challenge before sending plaintext once", async () => {
     const repository = new MemoryOtpRepository();
     const send = vi.fn().mockResolvedValue(undefined);
 
@@ -92,7 +96,7 @@ describe("Telegram OTP flow", () => {
     expect(stored?.expiresAt).toBe("2026-07-09T20:05:00.000Z");
   });
 
-  it("discards the challenge if Telegram delivery fails", async () => {
+  it("discards the reservation if Telegram delivery fails", async () => {
     const repository = new MemoryOtpRepository();
 
     await expect(
@@ -109,7 +113,7 @@ describe("Telegram OTP flow", () => {
     expect(repository.challenges.size).toBe(0);
   });
 
-  it("rate limits without creating or sending a challenge", async () => {
+  it("rate limits atomically without sending a challenge", async () => {
     const repository = new MemoryOtpRepository();
     repository.allowRequest = false;
     const send = vi.fn();
@@ -127,7 +131,7 @@ describe("Telegram OTP flow", () => {
     expect(repository.challenges.size).toBe(0);
   });
 
-  it("consumes a matching code and creates an OTP session", async () => {
+  it("consumes a matching code and creates a ten-minute one-use enrollment grant", async () => {
     const repository = new MemoryOtpRepository();
     await requestTelegramOtp({
       repository,
@@ -138,6 +142,10 @@ describe("Telegram OTP flow", () => {
       idFactory: () => "challenge-1",
       generateCode: () => "123456",
     });
+    const ids = vi
+      .fn<() => string>()
+      .mockReturnValueOnce("session-1")
+      .mockReturnValueOnce("grant-1");
 
     const result = await verifyTelegramOtp({
       repository,
@@ -145,12 +153,18 @@ describe("Telegram OTP flow", () => {
       challengeId: "challenge-1",
       code: "123456",
       now,
-      idFactory: () => "session-1",
+      idFactory: ids,
     });
 
-    expect(result).toEqual({ sessionId: "session-1", factor: "telegram_otp" });
-    expect(repository.challenges.get("challenge-1")?.consumed).toBe(true);
-    expect(repository.sessions).toHaveLength(1);
+    expect(result).toEqual({
+      sessionId: "session-1",
+      factor: "telegram_otp",
+      enrollmentGrantId: "grant-1",
+    });
+    expect(repository.sessions[0]?.enrollmentGrant).toEqual({
+      id: "grant-1",
+      expiresAt: "2026-07-09T20:10:00.000Z",
+    });
   });
 
   it("rejects a wrong or reused code", async () => {
@@ -173,9 +187,7 @@ describe("Telegram OTP flow", () => {
         code: "999999",
         now,
       }),
-    ).rejects.toMatchObject({
-      code: "invalid_or_expired",
-    });
+    ).rejects.toMatchObject({ code: "invalid_or_expired" });
 
     await verifyTelegramOtp({
       repository,
@@ -193,8 +205,6 @@ describe("Telegram OTP flow", () => {
         code: "123456",
         now,
       }),
-    ).rejects.toMatchObject({
-      code: "invalid_or_expired",
-    });
+    ).rejects.toMatchObject({ code: "invalid_or_expired" });
   });
 });

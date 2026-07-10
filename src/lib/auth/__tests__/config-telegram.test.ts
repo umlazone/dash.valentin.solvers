@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readAuthConfig } from "@/lib/auth/config";
-import { sendTelegramOtp } from "@/lib/auth/telegram";
+import { sendTelegramOtp, sendTelegramSecurityNotice } from "@/lib/auth/telegram";
 
 const env = {
   TELEGRAM_BOT_TOKEN: "123456:telegram-test-token",
@@ -46,6 +46,26 @@ describe("Telegram OTP sender", () => {
       protect_content: true,
     });
     expect(String(init.body)).toContain("123456");
+  });
+
+  it("sends a protected security notice after passkey enrollment", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, result: { message_id: 8 } }), {
+        status: 200,
+      }),
+    );
+
+    await sendTelegramSecurityNotice(
+      readAuthConfig(env),
+      "Nueva passkey registrada.",
+      fetcher,
+    );
+
+    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.chat_id).toBe("1135608648");
+    expect(body.protect_content).toBe(true);
+    expect(body.text).toContain("Nueva passkey registrada");
   });
 
   it("does not expose the bot token when Telegram rejects the send", async () => {
