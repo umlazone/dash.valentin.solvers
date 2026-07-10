@@ -21,6 +21,11 @@ import {
 import { factoryRequest } from "@/lib/factory/client";
 import type { FactorySnapshot } from "@/lib/factory/types";
 
+function mechanismLabel(value: string | null) {
+  const words = (value || "Mecanismo por clasificar").replace(/[_-]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Mecanismo por clasificar";
+}
+
 function FactoryState({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
   return (
     <span className="factory-state" data-tone={tone}>
@@ -60,6 +65,7 @@ export function FactoryProductionPanel({ data, onChanged }: CommonProps) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [visibleSignals, setVisibleSignals] = useState(6);
 
   async function run(key: string, task: () => Promise<unknown>, message: string) {
     setBusy(key);
@@ -222,14 +228,14 @@ export function FactoryProductionPanel({ data, onChanged }: CommonProps) {
         </div>
         <div className="research-grid">
           {data.signals.length ? (
-            data.signals.slice(0, 12).map((signal) => (
+            data.signals.slice(0, visibleSignals).map((signal) => (
               <article className="research-card" key={signal.id}>
                 <div className="factory-card__meta">
                   <FactoryState tone={signal.score >= 80 ? "good" : signal.score >= 65 ? "warn" : "neutral"}>{signal.score}</FactoryState>
                   <span>{signal.sourceAuthor ? `@${signal.sourceAuthor.replace(/^@/, "")}` : "X"}</span>
                   <span>{signal.status}</span>
                 </div>
-                <h3>{signal.mechanism || "Mecanismo por clasificar"}</h3>
+                <h3>{mechanismLabel(signal.mechanism)}</h3>
                 <p>{signal.solversAngle || signal.sourceText || "Sin ángulo todavía."}</p>
                 <div className="research-card__actions">
                   {signal.sourceUrl ? (
@@ -253,6 +259,15 @@ export function FactoryProductionPanel({ data, onChanged }: CommonProps) {
             <FactoryEmpty title="Research aún vacío" copy="El job Grok/X añadirá señales originales cada cuatro horas." />
           )}
         </div>
+        {visibleSignals < data.signals.length ? (
+          <button
+            className="factory-more-button"
+            type="button"
+            onClick={() => setVisibleSignals((count) => count + 6)}
+          >
+            Ver {Math.min(6, data.signals.length - visibleSignals)} señales más
+          </button>
+        ) : null}
       </section>
     </div>
   );
