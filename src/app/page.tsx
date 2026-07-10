@@ -245,6 +245,7 @@ function WorkspaceHeader({
           <Plus size={14} aria-hidden="true" />
           Nueva captura
         </button>
+        <LogoutButton variant="compact" />
       </div>
     </header>
   );
@@ -268,10 +269,13 @@ function MobileHeader({
           <div className="wordmark__edition">Agency OS · 2.0</div>
         </div>
       </div>
-      <button className="icon-button" onClick={onRefresh} disabled={loading} aria-label="Actualizar">
-        <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-        <span className="sr-only">{source}</span>
-      </button>
+      <div className="mobile-header__actions">
+        <button className="icon-button" onClick={onRefresh} disabled={loading} aria-label="Actualizar">
+          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+          <span className="sr-only">{source}</span>
+        </button>
+        <LogoutButton variant="compact" />
+      </div>
     </header>
   );
 }

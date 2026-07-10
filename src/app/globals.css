@@ -256,6 +256,10 @@ button {
   margin-top: 10px;
 }
 
+.logout-control--compact {
+  margin-top: 0;
+}
+
 .logout-button {
   width: 100%;
   min-height: 40px;
@@ -266,15 +270,36 @@ button {
   border: 0;
   border-top: 1px solid var(--line);
   background: transparent;
-  color: var(--faint);
+  color: var(--ink);
   cursor: pointer;
   font-size: 11px;
+  font-weight: 600;
   text-align: left;
-  transition: color 160ms var(--ease-out);
+  transition:
+    color 160ms var(--ease-out),
+    background 160ms var(--ease-out),
+    border-color 160ms var(--ease-out);
+}
+
+.logout-button--compact {
+  width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .logout-button:hover:not(:disabled) {
-  color: var(--ink);
+  color: var(--void);
+  background: var(--paper);
+}
+
+.logout-button--compact:hover:not(:disabled) {
+  border-color: var(--ink);
 }
 
 .logout-button:disabled {
@@ -288,6 +313,12 @@ button {
   color: var(--danger);
   font-size: 10px;
   line-height: 1.35;
+}
+
+.mobile-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .live-dot {

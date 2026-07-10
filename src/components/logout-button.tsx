@@ -5,10 +5,13 @@ import { LoaderCircle, LogOut } from "lucide-react";
 
 type Props = {
   onLoggedOut?: () => void;
+  /** rail = full width in left rail; compact = icon+label for header/mobile */
+  variant?: "rail" | "compact";
 };
 
 export function LogoutButton({
   onLoggedOut = () => window.location.assign("/login"),
+  variant = "rail",
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,9 +31,9 @@ export function LogoutButton({
   }
 
   return (
-    <div className="logout-control">
+    <div className={`logout-control logout-control--${variant}`}>
       <button
-        className="logout-button"
+        className={`logout-button logout-button--${variant}`}
         type="button"
         onClick={logout}
         disabled={busy}
