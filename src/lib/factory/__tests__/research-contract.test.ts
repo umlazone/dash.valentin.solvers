@@ -39,6 +39,38 @@ describe("Grok research contract", () => {
     expect(parsed.drafts).toHaveLength(1);
   });
 
+  it("enforces canonical X status identity and an approved author allowlist", () => {
+    const base = {
+      summary: "Research seguro",
+      queries: ["agent reliability"],
+      signals: [{
+        sourceUrl: "https://twitter.com/AlexFinn/status/123?utm_source=x",
+        sourcePostId: "forged",
+        sourceAuthor: "@AlexFinn",
+        sourceText: "Grounded source",
+        mechanism: "Prueba operativa",
+        solversAngle: "Ángulo Solvers",
+        score: 90,
+      }],
+      drafts: [],
+    };
+    const parsed = parseResearchPayload(base, { allowedHandles: new Set(["alexfinn"]) });
+    expect(parsed.signals[0]).toMatchObject({
+      sourceUrl: "https://x.com/AlexFinn/status/123",
+      sourcePostId: "123",
+      sourceAuthor: "AlexFinn",
+    });
+
+    expect(() => parseResearchPayload({
+      ...base,
+      signals: [{ ...base.signals[0], sourceAuthor: "other" }],
+    }, { allowedHandles: new Set(["alexfinn"]) })).toThrow("research_source_identity_mismatch");
+    expect(() => parseResearchPayload({
+      ...base,
+      signals: [{ ...base.signals[0], sourceUrl: "https://x.com/unapproved/status/999", sourceAuthor: "unapproved" }],
+    }, { allowedHandles: new Set(["alexfinn"]) })).toThrow("research_source_not_allowed");
+  });
+
   it("rejects ungrounded or oversized research output", () => {
     expect(() =>
       parseResearchPayload({

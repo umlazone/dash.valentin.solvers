@@ -1,20 +1,26 @@
 const formats = new Set(["post", "thread", "reply", "quote", "case", "playbook", "question"]);
 
+type ResearchOptions = {
+  allowedHandles?: ReadonlySet<string>;
+};
+
 function text(value: unknown, max: number) {
   return String(value || "").trim().slice(0, max);
 }
 
-function xUrl(value: unknown) {
+function xIdentity(value: unknown) {
   try {
     const url = new URL(String(value || ""));
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (url.protocol !== "https:" || !["x.com", "twitter.com"].includes(host)) {
-      throw new Error("invalid");
-    }
-    url.hostname = "x.com";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
+    if (url.protocol !== "https:" || !["x.com", "twitter.com"].includes(host)) throw new Error("invalid");
+    const match = url.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/status\/([0-9]+)\/?$/u);
+    if (!match) throw new Error("invalid");
+    const [, handle, sourcePostId] = match;
+    return {
+      sourceUrl: `https://x.com/${handle}/status/${sourcePostId}`,
+      sourceAuthor: handle,
+      sourcePostId,
+    };
   } catch {
     throw new Error("invalid_research_payload");
   }
@@ -22,33 +28,38 @@ function xUrl(value: unknown) {
 
 export type ResearchPayload = ReturnType<typeof parseResearchPayload>;
 
-export function parseResearchPayload(value: unknown) {
+export function parseResearchPayload(value: unknown, options: ResearchOptions = {}) {
   const input = (value || {}) as Record<string, unknown>;
   const summary = text(input.summary, 2_000);
   const queries = Array.isArray(input.queries)
     ? input.queries.map((query) => text(query, 300)).filter(Boolean).slice(0, 12)
     : [];
   if (!summary || !queries.length) throw new Error("invalid_research_payload");
-  if (!Array.isArray(input.signals) || input.signals.length > 20) {
-    throw new Error("research_signal_limit");
-  }
-  if (!Array.isArray(input.drafts) || input.drafts.length > 3) {
-    throw new Error("research_draft_limit");
-  }
+  if (!Array.isArray(input.signals) || input.signals.length > 20) throw new Error("research_signal_limit");
+  if (!Array.isArray(input.drafts) || input.drafts.length > 3) throw new Error("research_draft_limit");
+  const approved = options.allowedHandles
+    ? new Set(Array.from(options.allowedHandles, (handle) => handle.replace(/^@/u, "").toLowerCase()))
+    : null;
+  const seenSources = new Set<string>();
   const signals = input.signals.map((raw) => {
     const row = (raw || {}) as Record<string, unknown>;
-    const sourceUrl = xUrl(row.sourceUrl);
+    const identity = xIdentity(row.sourceUrl);
+    const declaredAuthor = text(row.sourceAuthor, 80).replace(/^@/u, "");
+    if (!declaredAuthor || declaredAuthor.toLowerCase() !== identity.sourceAuthor.toLowerCase()) {
+      throw new Error("research_source_identity_mismatch");
+    }
+    if (approved && !approved.has(identity.sourceAuthor.toLowerCase())) {
+      throw new Error("research_source_not_allowed");
+    }
+    if (seenSources.has(identity.sourcePostId)) throw new Error("research_source_duplicate");
+    seenSources.add(identity.sourcePostId);
     const sourceText = text(row.sourceText, 4_000);
     const mechanism = text(row.mechanism, 500);
     const solversAngle = text(row.solversAngle, 1_500);
-    if (!sourceText || !mechanism || !solversAngle) {
-      throw new Error("invalid_research_payload");
-    }
+    if (!sourceText || !mechanism || !solversAngle) throw new Error("invalid_research_payload");
     const requestedFormat = text(row.contentFormat, 30) || "post";
     return {
-      sourceUrl,
-      sourcePostId: text(row.sourcePostId, 80) || sourceUrl.split("/").pop() || null,
-      sourceAuthor: text(row.sourceAuthor, 80).replace(/^@/, "") || null,
+      ...identity,
       sourceText,
       mechanism,
       evidence: text(row.evidence, 1_000) || null,
@@ -65,12 +76,10 @@ export function parseResearchPayload(value: unknown) {
   const sourceUrls = new Set(signals.map((signal) => signal.sourceUrl));
   const drafts = input.drafts.map((raw) => {
     const row = (raw || {}) as Record<string, unknown>;
-    const sourceUrl = xUrl(row.sourceUrl);
+    const { sourceUrl } = xIdentity(row.sourceUrl);
     const title = text(row.title, 180);
     const body = text(row.body, 25_000);
-    if (!sourceUrls.has(sourceUrl) || !title || !body) {
-      throw new Error("invalid_research_payload");
-    }
+    if (!sourceUrls.has(sourceUrl) || !title || !body) throw new Error("invalid_research_payload");
     const requestedFormat = text(row.contentType, 30) || "post";
     return {
       sourceUrl,

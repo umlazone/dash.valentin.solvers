@@ -22,11 +22,29 @@ Real Solvers capture + recurring Grok/X research
 - Official X CLI profile: `solvers` (`xurl whoami` must resolve to `valentinflrz`)
 - Research model: `grok-4.5` through Hermes provider `xai-oauth`
 
+## Isolation model (hardened)
+
+```text
+every 4h  no-agent runner
+          ├─ deterministic context export (service role local only)
+          ├─ spawn hermes with toolset x_search ONLY
+          │    cwd=/tmp, stripped env, ignore-rules, max 4 turns
+          ├─ require BEGIN/END_SOLVERS_JSON envelope
+          ├─ validate allowlist + canonical X URLs
+          └─ deterministic ingest into Supabase (service role after validation)
+```
+
+- Grok never sees `SUPABASE_*` credentials.
+- Grok has no terminal, file tools, browser, messaging, or xurl.
+- Publisher remains a separate job and OFF by default.
+- Worker re-checks approval, dry-runs, snapshot hash, kill switch, mode, daily limit, and `@valentinflrz` identity.
+- SQL migration `20260710_06_publisher_claim_gates.sql` duplicates those gates inside `mc_claim_publications`.
+
 ## Durable jobs
 
 | Job | Schedule | Mode | Purpose |
 |---|---:|---|---|
-| `e3aef36d794f` · Solvers Grok/X research → factory | every 4h | Grok agent | X research, dedupe signals, propose max 2 grounded drafts |
+| `3b7dd0c7f294` · Solvers isolated Grok/X research | every 4h | script-only | Isolated Grok OAuth research + validated Supabase ingest |
 | `2ab7a70231ce` · Solvers publisher validator | every 15m | script-only | Advance queued publications through dry-run gates; publish only if live gates are enabled |
 
 Research outputs are saved to Supabase. Cron delivery is local to avoid Telegram spam.
@@ -80,28 +98,22 @@ No cron or dashboard action enables live publishing implicitly.
 ## Local commands
 
 ```bash
-cd /Users/kin/solvers-x-engine/apps/dash.valentin.solvers
+# Isolated research + ingest (same path as cron)
+npx tsx scripts/factory-research-runner.ts
 
-# Export safe factory context for a research agent
+# Context only / ingest only
 npx tsx scripts/factory-bridge.ts context --output /tmp/solvers-factory-context.json
-
-# Ingest a validated research payload
 npx tsx scripts/factory-bridge.ts ingest --input /tmp/solvers-research-output.json --model grok-4.5
 
-# Run publisher in configured mode (dry_run by default)
+# Publisher validator
 npx tsx scripts/factory-publisher.ts
 
-# Verify code
-npm test -- --run
-npm run lint
-npm run build
-npm audit --audit-level=moderate
+# Full private API tracer (no real X post)
+FACTORY_BASE_URL=https://dashvalentinsolvers.vercel.app npx tsx scripts/e2e-factory.ts
 ```
 
-## Incident controls
+## Auth residual
 
-- Pause research: `hermes cron pause e3aef36d794f`
-- Pause publisher worker: `hermes cron pause 2ab7a70231ce`
-- Immediate publication stop: set `kill_switch` ON in Systems.
-- X credentials are never read or printed; only `xurl auth status` and `xurl whoami` are permitted checks.
-- Supabase service role and Telegram bot tokens remain server/local only.
+- OTP Telegram + passkeys already enforced.
+- Face ID validation on your physical device is still operator-side.
+- Rotate any Telegram bot token that previously appeared in chat.
