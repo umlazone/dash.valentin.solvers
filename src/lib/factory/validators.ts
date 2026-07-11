@@ -50,6 +50,12 @@ export function parseScheduleInput(value: unknown, now = new Date()) {
   return { draftId, scheduledFor: date.toISOString() };
 }
 
+const MAX_X_POST_LENGTH = 270;
+
+export function buildPublisherExecutionPlan(mode: string) {
+  return mode === "live" ? (["dry_run", "live"] as const) : (["dry_run"] as const);
+}
+
 export function validatePublicationDryRun(input: {
   draftStatus: string;
   approvedAt: string | null;
@@ -62,7 +68,7 @@ export function validatePublicationDryRun(input: {
   if (input.draftStatus !== "scheduled") errors.push("draft_not_scheduled");
   if (!input.approvedAt) errors.push("human_approval_missing");
   if (!normalizedBody) errors.push("body_required");
-  if (normalizedBody.length > 25_000) errors.push("x_content_too_long");
+  if (normalizedBody.length > MAX_X_POST_LENGTH) errors.push("x_content_too_long");
   if (/\bTODO\b|\[X\]|\{\{.+?\}\}/iu.test(normalizedBody)) {
     errors.push("unresolved_placeholder");
   }
@@ -74,7 +80,7 @@ export function validatePublicationDryRun(input: {
       scheduled: input.draftStatus === "scheduled",
       approved: Boolean(input.approvedAt),
       contentPresent: normalizedBody.length > 0,
-      withinXLimit: normalizedBody.length <= 25_000,
+      withinXLimit: normalizedBody.length <= MAX_X_POST_LENGTH,
       snapshotMatches: input.contentHashMatches,
       unique: !input.alreadyPublished,
     },

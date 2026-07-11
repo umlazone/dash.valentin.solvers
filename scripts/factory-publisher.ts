@@ -6,7 +6,10 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { validatePublicationDryRun } from "../src/lib/factory/validators";
+import {
+  buildPublisherExecutionPlan,
+  validatePublicationDryRun,
+} from "../src/lib/factory/validators";
 
 function readEnvFile(path: string) {
   try {
@@ -174,8 +177,10 @@ async function main() {
   const db = database();
   const config = await settings(db);
   const requestedMode = process.argv.includes("--live") ? "live" : String(config.publisher_mode || "dry_run");
-  if (requestedMode === "live") return liveRun(db, config);
-  return dryRun(db);
+  for (const phase of buildPublisherExecutionPlan(requestedMode)) {
+    if (phase === "dry_run") await dryRun(db);
+    else await liveRun(db, config);
+  }
 }
 
 main().catch((error) => {

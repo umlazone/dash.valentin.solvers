@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPublisherExecutionPlan,
   parseCaptureInput,
   parseScheduleInput,
   validatePublicationDryRun,
@@ -45,6 +46,26 @@ describe("factory input validators", () => {
         now,
       ),
     ).toThrow("future_schedule_required");
+  });
+
+  it("runs validation before live publishing instead of skipping queued drafts", () => {
+    expect(buildPublisherExecutionPlan("dry_run")).toEqual(["dry_run"]);
+    expect(buildPublisherExecutionPlan("live")).toEqual(["dry_run", "live"]);
+  });
+
+  it("blocks posts beyond the configured X app limit", () => {
+    const result = validatePublicationDryRun({
+      draftStatus: "scheduled",
+      approvedAt: "2026-07-10T12:00:00.000Z",
+      body: "x".repeat(271),
+      contentHashMatches: true,
+      alreadyPublished: false,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining(["x_content_too_long"]),
+      checks: { withinXLimit: false },
+    });
   });
 
   it("blocks unsafe publication snapshots and passes clean approved text", () => {
