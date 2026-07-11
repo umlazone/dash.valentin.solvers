@@ -18,6 +18,7 @@ import { extractResearchEnvelope } from "../src/lib/factory/research-output";
 import {
   appendDeterministicXContext,
   buildFallbackHermesArgs,
+  buildPostFormattingContract,
   isXaiCreditFailure,
   parseXurlSearchContext,
 } from "../src/lib/factory/research-runner";
@@ -140,6 +141,11 @@ VOICE
 - If no real Solvers proof, write a take/opinion, not a fake case
 - Avoid robotic phrases: leverage, snapshot, dry-run, kill switch stacks, “Mission Control no es para…”
 - Prefer: “la verdad es que…”, “montamos…”, “al rato vimos…”, “el problema no era el modelo…”
+
+${buildPostFormattingContract()}
+
+FINAL QUALITY GATE
+Silently rewrite every proposal before output. Keep it only if the hook, spacing, rhythm, proof, and ending all feel intentional. One excellent proposal is better than two filler posts.
 
 SEARCH
 Make exactly 2–3 x_search calls covering agent reliability, autonomy without brakes, ops middleware, and builder lessons. Prefer recent posts.

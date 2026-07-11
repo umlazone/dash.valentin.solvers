@@ -109,6 +109,19 @@ export function buildFallbackHermesArgs(prompt: string) {
   ];
 }
 
+export function buildPostFormattingContract() {
+  return `FORMAT FOR X — MOBILE FIRST
+- Each post carries ONE idea and earns every sentence.
+- Use 2–5 short blocks with a blank line between blocks.
+- Put the hook in its own first block when it improves the rhythm.
+- Keep sentences natural and varied, like a WhatsApp voice note to a founder friend.
+- Prefer one or two sentences per block. Never return a wall of text.
+- Use a standalone final line only when it lands a real opinion or useful conclusion.
+- No arrow pipelines, bullet-list spine, stacked jargon, fake drama, hashtags, or decorative emojis.
+- Read it aloud before returning it. If it sounds assembled by AI, rewrite it.
+- Keep standard X posts at 270 characters or fewer, including line breaks. Return fewer posts rather than weakening format or voice.`;
+}
+
 export function buildResearchPrompt(input: PromptInput) {
   const handles = input.allowedHandles.join(", ");
   return `You are the isolated read-only X research stage for Solvers Agency OS.
@@ -141,7 +154,16 @@ LANGUAGE AND ORIGINALITY
 Spanish is default (80–90%); English is selective. summary, mechanism, evidence, and solversAngle must be natural Spanish. sourceText may preserve the source language. Mechanism is a human-readable 2–6 word label, never snake_case. Extract mechanisms; never synonym-spin or copy wording, opening, structure, examples, CTA, hashtags, or voice. Never invent Solvers facts, numbers, clients, wins, failures, or proof. If proof is missing, keep a signal and create no draft.
 
 DRAFTS
-Propose at most 2 original drafts, each grounded in one returned signal and materially different from existing drafts. Drafts remain unapproved and unpublished. Spanish by default.
+Propose at most 2 original drafts, each grounded in one returned signal and materially different from existing drafts. Drafts remain unapproved and unpublished. Spanish by default. Return only drafts that pass the format and voice audit; one strong draft is better than two average ones.
+
+${buildPostFormattingContract()}
+
+EDITORIAL SELF-CHECK — SILENTLY REWRITE BEFORE OUTPUT
+1. Is there one clear thought rather than a compressed mini-thread?
+2. Does every factual claim come from a supplied source or trusted Solvers proof?
+3. Are the line breaks intentional and comfortable on a phone?
+4. Does it sound like Valentin speaking, not software explaining itself?
+5. Is the final line specific rather than a generic slogan?
 
 TRUSTED BRAND CONTEXT
 ${input.brandContext.slice(0, 28_000)}

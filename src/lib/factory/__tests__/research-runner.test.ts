@@ -3,6 +3,7 @@ import {
   appendDeterministicXContext,
   buildFallbackHermesArgs,
   buildHermesResearchArgs,
+  buildPostFormattingContract,
   buildResearchPrompt,
   buildXurlSearchQueries,
   isXaiCreditFailure,
@@ -14,6 +15,16 @@ describe("isolated Grok research runner", () => {
   it("extracts only valid creator handles from trusted configuration", () => {
     const yaml = `- handle: AlexFinn\n- handle: levelsio\n- handle: bad-handle\n# - handle: ignored`;
     expect(parseCreatorHandles(yaml)).toEqual(["AlexFinn", "levelsio"]);
+  });
+
+  it("defines a readable X format instead of wall-of-text output", () => {
+    const contract = buildPostFormattingContract();
+    expect(contract).toContain("ONE idea");
+    expect(contract).toContain("blank line");
+    expect(contract).toContain("2–5 short blocks");
+    expect(contract).toContain("WhatsApp voice note");
+    expect(contract).toContain("standalone final line");
+    expect(contract).toContain("Never return a wall of text");
   });
 
   it("builds a bounded read-only prompt with explicit untrusted-data and output gates", () => {
