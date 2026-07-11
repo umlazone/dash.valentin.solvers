@@ -3,6 +3,7 @@ import {
   buildApprovalKeyboard,
   formatProposalMessage,
   parseApprovalCallback,
+  selectNextWeeklyContentSlot,
 } from "@/lib/telegram/approval";
 
 const DRAFT_ID = "11111111-1111-4111-8111-111111111111";
@@ -30,6 +31,35 @@ describe("telegram content approval", () => {
           { text: "❌ Declinar", callback_data: `mc:decline:${DRAFT_ID}` },
         ],
       ],
+    });
+  });
+
+  it("puts approvals into the next free weekly slot in Bogotá", () => {
+    const calendar = {
+      timezone: "America/Bogota",
+      monday: { time: "09:15", theme: "Caso real" },
+      tuesday: { time: "12:30", theme: "Playbook" },
+    };
+    const monday = "2026-07-13T14:15:00.000Z";
+    expect(
+      selectNextWeeklyContentSlot({
+        calendar,
+        now: new Date("2026-07-11T20:00:00.000Z"),
+        occupied: [],
+        preferredDay: "monday",
+      }),
+    ).toMatchObject({ day: "monday", time: "09:15", scheduledFor: monday });
+
+    expect(
+      selectNextWeeklyContentSlot({
+        calendar,
+        now: new Date("2026-07-11T20:00:00.000Z"),
+        occupied: [monday],
+      }),
+    ).toMatchObject({
+      day: "tuesday",
+      time: "12:30",
+      scheduledFor: "2026-07-14T17:30:00.000Z",
     });
   });
 
