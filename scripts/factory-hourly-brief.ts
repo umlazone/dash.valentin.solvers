@@ -9,12 +9,18 @@
  * - Telegram/Supabase secrets stay in this parent process
  */
 
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { extractResearchEnvelope } from "../src/lib/factory/research-output";
+import {
+  appendDeterministicXContext,
+  buildFallbackHermesArgs,
+  isXaiCreditFailure,
+  parseXurlSearchContext,
+} from "../src/lib/factory/research-runner";
 import { sendDraftProposal } from "../src/lib/telegram/bot";
 
 process.umask(0o077);
@@ -23,6 +29,28 @@ const APP = "/Users/kin/solvers-x-engine/apps/dash.valentin.solvers";
 const OUT = "/tmp/solvers-hourly-brief.json";
 const OUT_TMP = `${OUT}.${process.pid}.tmp`;
 const HERMES = process.env.HERMES_BIN || "hermes";
+const HOURLY_XURL_QUERIES = [
+  '("AI agent" OR agentic) (production OR reliability OR workflow) -is:retweet -is:reply lang:en',
+  '("AI agency" OR "agent ops" OR "agentic coding") -is:retweet -is:reply lang:en',
+  '("agentes de IA" OR "agentes IA") (automatización OR operaciones OR negocio) -is:retweet -is:reply lang:es',
+];
+
+function collectHourlyXContext() {
+  const records = HOURLY_XURL_QUERIES.flatMap((query) => {
+    try {
+      const raw = execFileSync("xurl", ["search", query, "-n", "10"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 30_000,
+        maxBuffer: 500_000,
+      });
+      return parseXurlSearchContext(raw);
+    } catch {
+      return [];
+    }
+  });
+  return Array.from(new Map(records.map((record) => [record.sourcePostId, record])).values());
+}
 
 function loadEnv(path: string) {
   try {
@@ -148,7 +176,8 @@ async function main() {
   const { fromDate, toDate } = dateWindow();
   const prompt = buildPrompt(fromDate, toDate, titles);
 
-  const research = spawnSync(
+  let backend = "grok-x-search";
+  let research = spawnSync(
     HERMES,
     [
       "chat",
@@ -171,7 +200,24 @@ async function main() {
     },
   );
   if (research.error) throw new Error(`brief_process_failed:${research.error.message}`);
-  if (research.status !== 0) throw new Error(`brief_failed:${research.status ?? "signal"}`);
+  if (research.status !== 0) {
+    const failure = `${research.stdout || ""}\n${research.stderr || ""}`;
+    if (!isXaiCreditFailure(failure)) throw new Error(`brief_failed:${research.status ?? "signal"}`);
+    const records = collectHourlyXContext();
+    if (!records.length) throw new Error("hourly_xurl_fallback_no_sources");
+    const fallbackPrompt = appendDeterministicXContext(prompt, records);
+    research = spawnSync(HERMES, buildFallbackHermesArgs(fallbackPrompt), {
+      cwd: "/tmp",
+      env: childEnv(),
+      encoding: "utf8",
+      maxBuffer: 200_000,
+      timeout: 180_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    backend = "openai-codex+xurl-readonly";
+    if (research.error) throw new Error(`brief_fallback_process_failed:${research.error.message}`);
+    if (research.status !== 0) throw new Error(`brief_fallback_failed:${research.status ?? "signal"}`);
+  }
 
   const brief = parseBrief(extractResearchEnvelope(research.stdout || ""));
   writeFileSync(OUT_TMP, JSON.stringify(brief), { mode: 0o600 });
@@ -230,6 +276,7 @@ async function main() {
       posts: created.length,
       trends: brief.trends,
       draft_ids: created.map((c) => c.id),
+      backend,
     },
   });
 
@@ -239,6 +286,7 @@ async function main() {
       posts: created.length,
       draftIds: created.map((c) => c.id),
       trends: brief.trends,
+      backend,
     }),
   );
 }

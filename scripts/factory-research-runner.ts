@@ -6,9 +6,14 @@ import { resolve } from "node:path";
 import { extractResearchEnvelope } from "../src/lib/factory/research-output";
 import { parseResearchPayload } from "../src/lib/factory/research-contract";
 import {
+  appendDeterministicXContext,
+  buildFallbackHermesArgs,
   buildHermesResearchArgs,
   buildResearchPrompt,
+  buildXurlSearchQueries,
+  isXaiCreditFailure,
   parseCreatorHandles,
+  parseXurlSearchContext,
 } from "../src/lib/factory/research-runner";
 
 process.umask(0o077);
@@ -51,6 +56,24 @@ function dateWindow() {
   };
 }
 
+function collectOfficialXContext(allowedHandles: string[]) {
+  const allowed = new Set(allowedHandles);
+  const records = buildXurlSearchQueries(allowedHandles).flatMap((query) => {
+    try {
+      const raw = execFileSync("xurl", ["search", query, "-n", "10"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 30_000,
+        maxBuffer: 500_000,
+      });
+      return parseXurlSearchContext(raw, allowed);
+    } catch {
+      return [];
+    }
+  });
+  return Array.from(new Map(records.map((record) => [record.sourcePostId, record])).values());
+}
+
 function main() {
   execFileSync(resolve(APP, "node_modules/.bin/tsx"), [
     resolve(APP, "scripts/factory-bridge.ts"),
@@ -77,7 +100,8 @@ function main() {
     factoryContext,
   });
 
-  const research = spawnSync(HERMES, buildHermesResearchArgs(prompt), {
+  let backend = "grok-x-search";
+  let research = spawnSync(HERMES, buildHermesResearchArgs(prompt), {
     cwd: "/tmp",
     env: childEnvironment(),
     encoding: "utf8",
@@ -86,7 +110,26 @@ function main() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (research.error) throw new Error(`grok_research_process_failed:${research.error.message}`);
-  if (research.status !== 0) throw new Error(`grok_research_failed:${research.status ?? "signal"}`);
+  if (research.status !== 0) {
+    const failure = `${research.stdout || ""}\n${research.stderr || ""}`;
+    if (!isXaiCreditFailure(failure)) {
+      throw new Error(`grok_research_failed:${research.status ?? "signal"}`);
+    }
+    const records = collectOfficialXContext(allowedHandles);
+    if (!records.length) throw new Error("xurl_fallback_no_sources");
+    const fallbackPrompt = appendDeterministicXContext(prompt, records);
+    research = spawnSync(HERMES, buildFallbackHermesArgs(fallbackPrompt), {
+      cwd: "/tmp",
+      env: childEnvironment(),
+      encoding: "utf8",
+      maxBuffer: 200_000,
+      timeout: 240_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    backend = "openai-codex+xurl-readonly";
+    if (research.error) throw new Error(`fallback_research_process_failed:${research.error.message}`);
+    if (research.status !== 0) throw new Error(`fallback_research_failed:${research.status ?? "signal"}`);
+  }
 
   const untrusted = extractResearchEnvelope(research.stdout || "");
   const validated = parseResearchPayload(untrusted, { allowedHandles: new Set(allowedHandles) });
@@ -95,7 +138,7 @@ function main() {
 
   const ingest = execFileSync(resolve(APP, "node_modules/.bin/tsx"), [
     resolve(APP, "scripts/factory-bridge.ts"),
-    "ingest", "--input", OUTPUT_PATH, "--model", "grok-4.5",
+    "ingest", "--input", OUTPUT_PATH, "--model", backend === "grok-x-search" ? "grok-4.5" : "gpt-5.6-sol+xurl",
   ], { cwd: APP, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 45_000 });
   const line = ingest.trim().split(/\r?\n/u).at(-1) || "";
   const result = JSON.parse(line) as { ok?: boolean; runId?: string; signals?: number; drafts?: number };
@@ -105,7 +148,8 @@ function main() {
     runId: result.runId,
     signals: result.signals,
     drafts: result.drafts,
-    isolation: "x_search_only",
+    backend,
+    isolation: backend === "grok-x-search" ? "x_search_only" : "xurl_readonly_context+no_tools",
   }));
 }
 
