@@ -68,6 +68,18 @@ describe("factory input validators", () => {
     });
   });
 
+  it("does not mistake the Spanish word todo for a TODO placeholder", () => {
+    expect(
+      validatePublicationDryRun({
+        draftStatus: "scheduled",
+        approvedAt: "2026-07-10T12:00:00.000Z",
+        body: "Guardar todo no vuelve inteligente la memoria.",
+        contentHashMatches: true,
+        alreadyPublished: false,
+      }),
+    ).toEqual({ ok: true, checks: expect.any(Object), errors: [] });
+  });
+
   it("blocks unsafe publication snapshots and passes clean approved text", () => {
     expect(
       validatePublicationDryRun({

@@ -69,7 +69,7 @@ export function validatePublicationDryRun(input: {
   if (!input.approvedAt) errors.push("human_approval_missing");
   if (!normalizedBody) errors.push("body_required");
   if (normalizedBody.length > MAX_X_POST_LENGTH) errors.push("x_content_too_long");
-  if (/\bTODO\b|\[X\]|\{\{.+?\}\}/iu.test(normalizedBody)) {
+  if (/\bTODO\b|\[X\]|\{\{.+?\}\}/u.test(normalizedBody)) {
     errors.push("unresolved_placeholder");
   }
   if (!input.contentHashMatches) errors.push("content_changed_after_schedule");
