@@ -159,6 +159,7 @@ export function activeNotificationChatIds(
 export type TelegramApprovalMessage = {
   chatId: string;
   messageId: number;
+  draftVersion: number;
 };
 
 export function normalizeTelegramApprovalMessages(metadata: unknown): TelegramApprovalMessage[] {
@@ -171,8 +172,15 @@ export function normalizeTelegramApprovalMessages(metadata: unknown): TelegramAp
     const item = value as Record<string, unknown>;
     const chatId = cleanText(item.chat_id, 20);
     const messageId = Number(item.message_id);
-    if (!PRIVATE_CHAT_ID_RE.test(chatId) || !Number.isSafeInteger(messageId) || messageId <= 0) continue;
-    messages.set(chatId, { chatId, messageId });
+    const draftVersion = Number(item.draft_version);
+    if (
+      !PRIVATE_CHAT_ID_RE.test(chatId) ||
+      !Number.isSafeInteger(messageId) ||
+      messageId <= 0 ||
+      !Number.isSafeInteger(draftVersion) ||
+      draftVersion < 1
+    ) continue;
+    messages.set(chatId, { chatId, messageId, draftVersion });
   }
   return [...messages.values()];
 }

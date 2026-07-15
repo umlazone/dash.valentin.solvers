@@ -22,13 +22,13 @@ describe("telegram content approval", () => {
     expect(message).not.toContain("BEGIN_SOLVERS");
   });
 
-  it("builds approve/decline callback data bound to a draft id", () => {
-    const keyboard = buildApprovalKeyboard(DRAFT_ID);
+  it("builds approve/decline callback data bound to a draft id and version", () => {
+    const keyboard = buildApprovalKeyboard(DRAFT_ID, 7);
     expect(keyboard).toEqual({
       inline_keyboard: [
         [
-          { text: "✅ Aprobar", callback_data: `mc:approve:${DRAFT_ID}` },
-          { text: "❌ Declinar", callback_data: `mc:decline:${DRAFT_ID}` },
+          { text: "✅ Aprobar", callback_data: `mc:approve:${DRAFT_ID}:7` },
+          { text: "❌ Declinar", callback_data: `mc:decline:${DRAFT_ID}:7` },
         ],
       ],
     });
@@ -63,15 +63,18 @@ describe("telegram content approval", () => {
     });
   });
 
-  it("parses only valid approval callbacks", () => {
-    expect(parseApprovalCallback(`mc:approve:${DRAFT_ID}`)).toEqual({
+  it("parses only version-bound approval callbacks", () => {
+    expect(parseApprovalCallback(`mc:approve:${DRAFT_ID}:7`)).toEqual({
       action: "approve",
       draftId: DRAFT_ID,
+      draftVersion: 7,
     });
-    expect(parseApprovalCallback(`mc:decline:${DRAFT_ID}`)).toEqual({
+    expect(parseApprovalCallback(`mc:decline:${DRAFT_ID}:7`)).toEqual({
       action: "decline",
       draftId: DRAFT_ID,
+      draftVersion: 7,
     });
+    expect(() => parseApprovalCallback(`mc:approve:${DRAFT_ID}`)).toThrow("invalid_callback");
     expect(() => parseApprovalCallback("mc:hack:nope")).toThrow("invalid_callback");
     expect(() => parseApprovalCallback("mc:approve:not-a-uuid")).toThrow("invalid_callback");
   });

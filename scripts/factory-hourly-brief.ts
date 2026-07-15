@@ -13,7 +13,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { extractResearchEnvelope } from "../src/lib/factory/research-output";
 import {
   appendDeterministicXContext,
@@ -22,11 +22,16 @@ import {
   isXaiCreditFailure,
   parseXurlSearchContext,
 } from "../src/lib/factory/research-runner";
-import { editProposalResult, sendDraftProposal } from "../src/lib/telegram/bot";
+import {
+  editProposalResult,
+  enableProposalControls,
+  sendDraftProposal,
+} from "../src/lib/telegram/bot";
 import { formatProposalMessage } from "../src/lib/telegram/approval";
 import {
   activeNotificationChatIds,
   formatTelegramDecisionLine,
+  normalizeTelegramApprovalMessages,
 } from "../src/lib/telegram/members";
 
 process.umask(0o077);
@@ -167,6 +172,218 @@ END_SOLVERS_JSON
 Return 1 post if only one is strong. Never pad weak content.`;
 }
 
+type DbClient = SupabaseClient;
+type ProposalCopy = {
+  id: string;
+  version: number;
+  title: string;
+  body: string;
+  language: "ES" | "EN";
+  angle?: string;
+};
+
+type ProposalDraftRow = Omit<ProposalCopy, "angle"> & {
+  hook?: string | null;
+  status: string;
+  metadata: unknown;
+  scheduled_for?: string | null;
+};
+
+function isNotModified(error: unknown) {
+  return error instanceof Error && error.message.includes("message is not modified");
+}
+
+async function applyRegisteredProposalState(input: {
+  botToken: string;
+  chatId: string;
+  messageId: number;
+  proposal: ProposalCopy;
+  registration: unknown;
+}) {
+  const state = input.registration && typeof input.registration === "object"
+    ? input.registration as Record<string, unknown>
+    : {};
+  const proposalText = formatProposalMessage(input.proposal);
+  if (["approve", "decline"].includes(String(state.decision))) {
+    await editProposalResult(
+      { botToken: input.botToken, chatId: input.chatId },
+      input.messageId,
+      proposalText,
+      formatTelegramDecisionLine({
+        decision: state.decision as "approve" | "decline",
+        scheduledFor: typeof state.scheduled_for === "string" ? state.scheduled_for : null,
+        actor: state.decided_by,
+      }),
+    );
+    return "terminal" as const;
+  }
+  if (state.registered === true) {
+    await enableProposalControls(
+      { botToken: input.botToken, chatId: input.chatId },
+      input.messageId,
+      input.proposal.id,
+      input.proposal.version,
+    );
+    return "active" as const;
+  }
+  await editProposalResult(
+    { botToken: input.botToken, chatId: input.chatId },
+    input.messageId,
+    proposalText,
+    "⚠️ PROPUESTA DESACTUALIZADA · espera la versión nueva",
+  );
+  return "stale" as const;
+}
+
+async function sendAndRegisterProposalCopy(input: {
+  db: DbClient;
+  botToken: string;
+  chatId: string;
+  proposal: ProposalCopy;
+}) {
+  const sent = await sendDraftProposal(
+    { botToken: input.botToken, chatId: input.chatId },
+    input.proposal,
+    { withControls: false },
+  );
+  if (!sent.messageId) throw new Error("telegram_message_id_missing");
+  const { data: registration, error } = await input.db.rpc(
+    "mc_register_telegram_approval_message",
+    {
+      p_draft_id: input.proposal.id,
+      p_draft_version: input.proposal.version,
+      p_chat_id: input.chatId,
+      p_message_id: sent.messageId,
+      p_now: new Date().toISOString(),
+    },
+  );
+  if (error) throw new Error(`telegram_message_register_failed:${error.message}`);
+  return applyRegisteredProposalState({
+    botToken: input.botToken,
+    chatId: input.chatId,
+    messageId: sent.messageId,
+    proposal: input.proposal,
+    registration,
+  });
+}
+
+async function reconcileTelegramProposals(input: {
+  db: DbClient;
+  botToken: string;
+  recipientChatIds: string[];
+}) {
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1_000).toISOString();
+  const { data, error } = await input.db
+    .from("mc_drafts")
+    .select("id,version,title,body,language,hook,status,metadata,scheduled_for,updated_at")
+    .eq("source", "hourly_brief")
+    .contains("metadata", { telegram_shared_delivery: true })
+    .in("status", ["in_review", "scheduled", "publishing", "published", "failed", "rejected"])
+    .gte("updated_at", since)
+    .order("updated_at", { ascending: false })
+    .limit(30);
+  if (error) throw new Error(`telegram_reconcile_lookup_failed:${error.message}`);
+
+  const failures: Array<{ draftId: string; chatId: string; error: string }> = [];
+  for (const row of (data || []) as ProposalDraftRow[]) {
+    const proposal: ProposalCopy = {
+      id: row.id,
+      version: Number(row.version),
+      title: row.title,
+      body: row.body,
+      language: row.language === "EN" ? "EN" : "ES",
+      angle: row.hook || undefined,
+    };
+    const text = formatProposalMessage(proposal);
+    const mappings = normalizeTelegramApprovalMessages(row.metadata);
+    const decision = ["scheduled", "publishing", "published", "failed"].includes(row.status)
+      ? "approve"
+      : row.status === "rejected"
+        ? "decline"
+        : null;
+
+    if (decision) {
+      const metadata = row.metadata && typeof row.metadata === "object"
+        ? row.metadata as Record<string, unknown>
+        : {};
+      for (const mapping of mappings) {
+        try {
+          await editProposalResult(
+            { botToken: input.botToken, chatId: mapping.chatId },
+            mapping.messageId,
+            text,
+            formatTelegramDecisionLine({
+              decision,
+              scheduledFor: row.scheduled_for,
+              actor: metadata.telegram_decided_by,
+            }),
+          );
+        } catch (syncError) {
+          if (!isNotModified(syncError)) {
+            failures.push({
+              draftId: row.id,
+              chatId: mapping.chatId,
+              error: syncError instanceof Error ? syncError.message.slice(0, 240) : "sync_failed",
+            });
+          }
+        }
+      }
+      continue;
+    }
+
+    for (const recipientChatId of input.recipientChatIds) {
+      const mapping = mappings.find((item) => item.chatId === recipientChatId);
+      try {
+        if (mapping?.draftVersion === proposal.version) {
+          await enableProposalControls(
+            { botToken: input.botToken, chatId: recipientChatId },
+            mapping.messageId,
+            proposal.id,
+            proposal.version,
+          );
+          continue;
+        }
+        if (mapping) {
+          try {
+            await editProposalResult(
+              { botToken: input.botToken, chatId: recipientChatId },
+              mapping.messageId,
+              text,
+              "⚠️ PROPUESTA DESACTUALIZADA · reemplazada por una versión nueva",
+            );
+          } catch (staleError) {
+            if (!isNotModified(staleError)) throw staleError;
+          }
+        }
+        await sendAndRegisterProposalCopy({
+          db: input.db,
+          botToken: input.botToken,
+          chatId: recipientChatId,
+          proposal,
+        });
+      } catch (deliveryError) {
+        if (!isNotModified(deliveryError)) {
+          failures.push({
+            draftId: row.id,
+            chatId: recipientChatId,
+            error: deliveryError instanceof Error ? deliveryError.message.slice(0, 240) : "delivery_failed",
+          });
+        }
+      }
+    }
+  }
+  if (failures.length) {
+    await input.db.from("mc_events").insert({
+      actor: "telegram_reconciler",
+      event_type: "factory.telegram_reconciliation_incomplete",
+      entity_type: "system",
+      entity_id: "solvers_notifications",
+      payload: { failures },
+    });
+  }
+  return failures;
+}
+
 async function main() {
   loadEnv(resolve(APP, ".env.local"));
   loadEnv(resolve(homedir(), ".hermes/credentials/solvers-infra.env"));
@@ -184,6 +401,11 @@ async function main() {
     .like("key", "telegram_notification_member:%");
   if (memberError) throw new Error(`telegram_members_failed:${memberError.message}`);
   const recipientChatIds = activeNotificationChatIds(memberRows || [], chatId);
+  const reconciliationFailures = await reconcileTelegramProposals({
+    db,
+    botToken,
+    recipientChatIds,
+  });
 
   const { data: existing } = await db
     .from("mc_drafts")
@@ -261,9 +483,10 @@ async function main() {
           approval_channel: "telegram_otp_bot",
           trends: brief.trends,
           summary: brief.summary,
+          telegram_shared_delivery: true,
         },
       })
-      .select("id,title")
+      .select("id,title,version")
       .single();
     if (error || !draft) throw new Error(`draft_create_failed:${error?.message || "unknown"}`);
     await db.from("mc_draft_revisions").insert({
@@ -275,44 +498,20 @@ async function main() {
     });
     const proposal = {
       id: draft.id,
+      version: Number(draft.version || 1),
       title: post.title,
       body: post.body,
       language: post.language,
       angle: post.angle || brief.trends[0] || brief.summary,
     };
-    const proposalText = formatProposalMessage(proposal);
     for (const recipientChatId of recipientChatIds) {
       try {
-        const sent = await sendDraftProposal(
-          { botToken, chatId: recipientChatId },
+        await sendAndRegisterProposalCopy({
+          db,
+          botToken,
+          chatId: recipientChatId,
           proposal,
-        );
-        if (!sent.messageId) throw new Error("telegram_message_id_missing");
-        const { data: registration, error: registerError } = await db.rpc(
-          "mc_register_telegram_approval_message",
-          {
-            p_draft_id: draft.id,
-            p_chat_id: recipientChatId,
-            p_message_id: sent.messageId,
-            p_now: new Date().toISOString(),
-          },
-        );
-        if (registerError) throw new Error(`telegram_message_register_failed:${registerError.message}`);
-        const registered = registration && typeof registration === "object"
-          ? registration as Record<string, unknown>
-          : {};
-        if (["approve", "decline"].includes(String(registered.decision))) {
-          await editProposalResult(
-            { botToken, chatId: recipientChatId },
-            sent.messageId,
-            proposalText,
-            formatTelegramDecisionLine({
-              decision: registered.decision as "approve" | "decline",
-              scheduledFor: typeof registered.scheduled_for === "string" ? registered.scheduled_for : null,
-              actor: registered.decided_by,
-            }),
-          );
-        }
+        });
       } catch (deliveryError) {
         const message = deliveryError instanceof Error ? deliveryError.message : "telegram_delivery_failed";
         deliveryFailures.push({ draftId: draft.id, chatId: recipientChatId, error: message.slice(0, 240) });
@@ -344,6 +543,7 @@ async function main() {
       draftIds: created.map((c) => c.id),
       recipients: recipientChatIds.length,
       deliveryFailures: deliveryFailures.length,
+      reconciliationFailures: reconciliationFailures.length,
       trends: brief.trends,
       backend,
     }),

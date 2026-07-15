@@ -121,13 +121,14 @@ export function formatProposalMessage(input: ProposalMessageInput) {
     .join("\n");
 }
 
-export function buildApprovalKeyboard(draftId: string) {
+export function buildApprovalKeyboard(draftId: string, draftVersion: number) {
   if (!UUID_RE.test(draftId)) throw new Error("invalid_draft_id");
+  if (!Number.isSafeInteger(draftVersion) || draftVersion < 1) throw new Error("invalid_draft_version");
   return {
     inline_keyboard: [
       [
-        { text: "✅ Aprobar", callback_data: `mc:approve:${draftId}` },
-        { text: "❌ Declinar", callback_data: `mc:decline:${draftId}` },
+        { text: "✅ Aprobar", callback_data: `mc:approve:${draftId}:${draftVersion}` },
+        { text: "❌ Declinar", callback_data: `mc:decline:${draftId}:${draftVersion}` },
       ],
     ],
   };
@@ -136,11 +137,21 @@ export function buildApprovalKeyboard(draftId: string) {
 export function parseApprovalCallback(data: string): {
   action: ApprovalAction;
   draftId: string;
+  draftVersion: number;
 } {
-  const match = /^mc:(approve|decline):([0-9a-f-]{36})$/iu.exec(String(data || "").trim());
-  if (!match || !UUID_RE.test(match[2])) throw new Error("invalid_callback");
+  const match = /^mc:(approve|decline):([0-9a-f-]{36}):(\d{1,10})$/iu.exec(String(data || "").trim());
+  const draftVersion = Number(match?.[3]);
+  if (
+    !match ||
+    !UUID_RE.test(match[2]) ||
+    !Number.isSafeInteger(draftVersion) ||
+    draftVersion < 1
+  ) {
+    throw new Error("invalid_callback");
+  }
   return {
     action: match[1].toLowerCase() as ApprovalAction,
     draftId: match[2],
+    draftVersion,
   };
 }

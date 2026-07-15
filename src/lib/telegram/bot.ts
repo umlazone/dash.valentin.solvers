@@ -55,7 +55,8 @@ export async function sendTextMessage(
 
 export async function sendDraftProposal(
   config: TelegramBotConfig,
-  draft: ProposalMessageInput & { id: string },
+  draft: ProposalMessageInput & { id: string; version: number },
+  options: { withControls?: boolean } = {},
   fetcher: Fetcher = fetch,
 ) {
   const result = await telegramApi(
@@ -64,12 +65,33 @@ export async function sendDraftProposal(
     {
       chat_id: config.chatId,
       text: formatProposalMessage(draft),
-      reply_markup: buildApprovalKeyboard(draft.id),
+      ...(options.withControls === false
+        ? {}
+        : { reply_markup: buildApprovalKeyboard(draft.id, draft.version) }),
       disable_web_page_preview: true,
     },
     fetcher,
   );
   return { messageId: result.message_id ?? null };
+}
+
+export async function enableProposalControls(
+  config: TelegramBotConfig,
+  messageId: number,
+  draftId: string,
+  draftVersion: number,
+  fetcher: Fetcher = fetch,
+) {
+  await telegramApi(
+    config,
+    "editMessageReplyMarkup",
+    {
+      chat_id: config.chatId,
+      message_id: messageId,
+      reply_markup: buildApprovalKeyboard(draftId, draftVersion),
+    },
+    fetcher,
+  );
 }
 
 export async function answerCallback(

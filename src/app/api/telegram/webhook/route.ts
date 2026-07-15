@@ -98,6 +98,7 @@ async function syncTelegramDecisionMessages(input: {
   fallbackScheduledFor?: string;
   currentChatId: string;
   currentMessageId?: number;
+  currentDraftVersion: number;
 }) {
   const { data: draft, error } = await input.sb
     .from("mc_drafts")
@@ -124,6 +125,7 @@ async function syncTelegramDecisionMessages(input: {
     messages.set(input.currentChatId, {
       chatId: input.currentChatId,
       messageId: input.currentMessageId,
+      draftVersion: input.currentDraftVersion,
     });
   }
   const failures: Array<{ chatId: string; error: string }> = [];
@@ -420,64 +422,113 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { action, draftId } = parseApprovalCallback(callback.data);
+    const { action, draftId, draftVersion } = parseApprovalCallback(callback.data);
     const { data: draft, error } = await sb
       .from("mc_drafts")
       .select("id,title,body,status,version,metadata")
       .eq("id", draftId)
       .maybeSingle();
     if (error || !draft) throw new Error("draft_not_found");
+    const callbackMessageId = Number(callback.message?.message_id || 0);
+    const registeredMessage = normalizeTelegramApprovalMessages(draft.metadata).find(
+      (message) =>
+        message.chatId === callbackChatId &&
+        message.messageId === callbackMessageId &&
+        message.draftVersion === draftVersion,
+    );
+    if (!registeredMessage) {
+      try { await answerCallback(config, callback.id, "Botón antiguo o no registrado"); } catch { /* stale */ }
+      if (callbackMessageId && callback.message?.text) {
+        try {
+          await editProposalResult(
+            config,
+            callbackMessageId,
+            callback.message.text,
+            "⚠️ PROPUESTA DESACTUALIZADA · espera la versión nueva",
+          );
+        } catch { /* convergence job will retry tracked messages */ }
+      }
+      return NextResponse.json({ ok: true, stale: true, draftId, draftVersion });
+    }
 
     const now = new Date().toISOString();
     const terminal = ["scheduled", "publishing", "published", "failed", "rejected"].includes(draft.status);
+    if (!terminal && Number(draft.version) !== draftVersion) {
+      try { await answerCallback(config, callback.id, "Esa propuesta cambió de versión"); } catch { /* stale */ }
+      if (callbackMessageId && callback.message?.text) {
+        try {
+          await editProposalResult(
+            config,
+            callbackMessageId,
+            callback.message.text,
+            "⚠️ PROPUESTA DESACTUALIZADA · espera la versión nueva",
+          );
+        } catch { /* convergence job will retry */ }
+      }
+      return NextResponse.json({ ok: true, stale: true, draftId, draftVersion });
+    }
     let scheduledFor: string | null = null;
     let contentHash = "";
     let idempotencyKey = "";
 
-    if (action === "approve" && !terminal) {
-      const [{ data: calendarRow, error: calendarError }, { data: occupiedRows, error: occupiedError }] =
-        await Promise.all([
-          sb.from("mc_system_settings").select("value").eq("key", "weekly_content_calendar").maybeSingle(),
-          sb.from("mc_publications").select("scheduled_for")
-            .in("status", PUBLICATION_QUEUE_STATUSES).gte("scheduled_for", now),
-        ]);
-      if (calendarError || !calendarRow?.value || typeof calendarRow.value !== "object") {
-        throw new Error("weekly_calendar_not_configured");
+    let decision: TelegramDecisionResult | null = null;
+    for (let attempt = 0; attempt < 3 && !decision; attempt += 1) {
+      if (action === "approve" && !terminal) {
+        const [{ data: calendarRow, error: calendarError }, { data: occupiedRows, error: occupiedError }] =
+          await Promise.all([
+            sb.from("mc_system_settings").select("value")
+              .eq("key", "weekly_content_calendar").maybeSingle(),
+            sb.from("mc_publications").select("scheduled_for")
+              .in("status", PUBLICATION_QUEUE_STATUSES).gte("scheduled_for", now),
+          ]);
+        if (calendarError || !calendarRow?.value || typeof calendarRow.value !== "object") {
+          throw new Error("weekly_calendar_not_configured");
+        }
+        if (occupiedError) throw new Error(`publication_queue_lookup_failed:${occupiedError.message}`);
+        const metadata = draft.metadata && typeof draft.metadata === "object"
+          ? draft.metadata as Record<string, unknown>
+          : {};
+        const preferredDay = typeof metadata.calendar_day === "string" ? metadata.calendar_day : null;
+        const slot = selectNextWeeklyContentSlot({
+          calendar: calendarRow.value as Record<string, unknown>,
+          occupied: (occupiedRows || []).map((row) => String(row.scheduled_for)),
+          preferredDay,
+          now: new Date(now),
+        });
+        scheduledFor = slot.scheduledFor;
+        const intent = buildPublicationIntent({
+          draftId,
+          version: draftVersion + 1,
+          body: draft.body,
+          scheduledFor,
+        });
+        contentHash = intent.contentHash;
+        idempotencyKey = intent.idempotencyKey;
       }
-      if (occupiedError) throw new Error(`publication_queue_lookup_failed:${occupiedError.message}`);
-      const metadata = draft.metadata && typeof draft.metadata === "object"
-        ? draft.metadata as Record<string, unknown>
-        : {};
-      const preferredDay = typeof metadata.calendar_day === "string" ? metadata.calendar_day : null;
-      const slot = selectNextWeeklyContentSlot({
-        calendar: calendarRow.value as Record<string, unknown>,
-        occupied: (occupiedRows || []).map((row) => String(row.scheduled_for)),
-        preferredDay,
-        now: new Date(now),
-      });
-      scheduledFor = slot.scheduledFor;
-      const intent = buildPublicationIntent({
-        draftId,
-        version: Number(draft.version || 1) + 1,
-        body: draft.body,
-        scheduledFor,
-      });
-      contentHash = intent.contentHash;
-      idempotencyKey = intent.idempotencyKey;
-    }
 
-    const { data: rawDecision, error: decisionError } = await sb.rpc("mc_decide_draft_telegram", {
-      p_draft_id: draftId,
-      p_expected_version: Number(draft.version || 1),
-      p_action: action,
-      p_scheduled_for: scheduledFor,
-      p_content_hash: contentHash,
-      p_idempotency_key: idempotencyKey,
-      p_actor: decisionActor,
-      p_now: now,
-    });
-    if (decisionError) throw new Error(`telegram_decision_failed:${decisionError.message}`);
-    const decision = parseTelegramDecisionResult(rawDecision);
+      const { data: rawDecision, error: decisionError } = await sb.rpc(
+        "mc_decide_draft_telegram",
+        {
+          p_draft_id: draftId,
+          p_expected_version: draftVersion,
+          p_action: action,
+          p_scheduled_for: scheduledFor,
+          p_content_hash: contentHash,
+          p_idempotency_key: idempotencyKey,
+          p_actor: decisionActor,
+          p_now: now,
+        },
+      );
+      if (!decisionError) {
+        decision = parseTelegramDecisionResult(rawDecision);
+        break;
+      }
+      const conflict = decisionError.message.includes("mc_publications_active_scheduled_for_uidx");
+      if (!conflict || attempt === 2) {
+        throw new Error(`telegram_decision_failed:${decisionError.message}`);
+      }
+    }
+    if (!decision) throw new Error("telegram_decision_failed:no_result");
     const answer = decision.decision === "approve"
       ? decision.applied
         ? `Aprobado y en cola: ${formatDecisionTime(decision.scheduled_for || scheduledFor)}.`
@@ -495,6 +546,7 @@ export async function POST(request: NextRequest) {
       fallbackScheduledFor: decision.scheduled_for || scheduledFor || undefined,
       currentChatId: callbackChatId,
       currentMessageId: callback.message?.message_id,
+      currentDraftVersion: draftVersion,
     });
     return NextResponse.json({
       ok: true,
@@ -506,6 +558,21 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "callback_failed";
+    if (message === "invalid_callback") {
+      try { await answerCallback(config, callback.id, "Botón antiguo; espera la propuesta actualizada"); } catch { /* stale */ }
+      const messageId = Number(callback.message?.message_id || 0);
+      if (messageId && callback.message?.text) {
+        try {
+          await editProposalResult(
+            config,
+            messageId,
+            callback.message.text,
+            "⚠️ PROPUESTA DESACTUALIZADA · espera la versión nueva",
+          );
+        } catch { /* untracked legacy message */ }
+      }
+      return NextResponse.json({ ok: true, stale: true });
+    }
     try {
       await answerCallback(config, callback.id, `Error: ${message.slice(0, 120)}`);
     } catch {

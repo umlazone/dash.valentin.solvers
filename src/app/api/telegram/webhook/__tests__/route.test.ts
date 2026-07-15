@@ -58,7 +58,7 @@ describe("Telegram webhook authorization boundary", () => {
       update_id: 2,
       callback_query: {
         id: "callback-1",
-        data: "mc:approve:11111111-1111-4111-8111-111111111111",
+        data: "mc:approve:11111111-1111-4111-8111-111111111111:1",
         from: { id: 9999999999 },
         message: {
           message_id: 11,
@@ -91,7 +91,7 @@ describe("Telegram webhook authorization boundary", () => {
       update_id: 3,
       callback_query: {
         id: "callback-2",
-        data: "mc:approve:11111111-1111-4111-8111-111111111111",
+        data: "mc:approve:11111111-1111-4111-8111-111111111111:1",
         from: { id: 2233445566 },
         message: {
           message_id: 12,
@@ -108,6 +108,158 @@ describe("Telegram webhook authorization boundary", () => {
     expect(mocks.getSupabaseService).toHaveBeenCalledOnce();
   });
 
+  it("rejects a stale or unregistered proposal button before any decision RPC", async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Draft cambiado",
+        body: "Texto nuevo",
+        status: "in_review",
+        version: 2,
+        metadata: {
+          telegram_approval_messages: [
+            { chat_id: "1135608648", message_id: 19, draft_version: 2 },
+          ],
+        },
+      },
+      error: null,
+    }));
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    const rpc = vi.fn();
+    mocks.getSupabaseService.mockReturnValueOnce({ from, rpc });
+
+    const response = await POST(request({
+      update_id: 31,
+      callback_query: {
+        id: "callback-stale",
+        data: "mc:approve:11111111-1111-4111-8111-111111111111:1",
+        from: { id: 1135608648 },
+        message: {
+          message_id: 18,
+          text: "propuesta vieja",
+          chat: { id: 1135608648, type: "private" },
+        },
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, stale: true });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mocks.editProposalResult).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: "1135608648" }),
+      18,
+      "propuesta vieja",
+      expect.stringContaining("DESACTUALIZADA"),
+    );
+  });
+
+  it("reselects a weekly slot when another approval reserves the first slot concurrently", async () => {
+    const draftMaybeSingle = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Draft concurrente",
+          body: "Texto listo",
+          status: "in_review",
+          version: 1,
+          metadata: {
+            telegram_approval_messages: [
+              { chat_id: "1135608648", message_id: 61, draft_version: 1 },
+            ],
+          },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Draft concurrente",
+          body: "Texto listo",
+          language: "ES",
+          hook: null,
+          scheduled_for: "2026-07-15T19:00:00.000Z",
+          metadata: {
+            telegram_decided_by: "telegram_operator",
+            telegram_approval_messages: [
+              { chat_id: "1135608648", message_id: 61, draft_version: 1 },
+            ],
+          },
+        },
+        error: null,
+      });
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "duplicate key value violates unique constraint mc_publications_active_scheduled_for_uidx" },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          applied: true,
+          decision: "approve",
+          draft_status: "scheduled",
+          scheduled_for: "2026-07-15T19:00:00.000Z",
+        },
+        error: null,
+      });
+    const occupiedGte = vi.fn(async () => ({
+      data: occupiedGte.mock.calls.length > 1
+        ? [{ scheduled_for: rpc.mock.calls[0]?.[1]?.p_scheduled_for }]
+        : [],
+      error: null,
+    }));
+    const from = vi.fn((table: string) => {
+      if (table === "mc_drafts") {
+        return { select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: draftMaybeSingle })) })) };
+      }
+      if (table === "mc_system_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  value: {
+                    timezone: "America/Bogota",
+                    monday: { time: "09:00", theme: "Caso" },
+                    tuesday: { time: "14:00", theme: "Playbook" },
+                  },
+                },
+                error: null,
+              })),
+            })),
+          })),
+        };
+      }
+      return {
+        select: vi.fn(() => ({
+          in: vi.fn(() => ({ gte: occupiedGte })),
+        })),
+      };
+    });
+    mocks.getSupabaseService.mockReturnValueOnce({ from, rpc });
+
+    const response = await POST(request({
+      update_id: 32,
+      callback_query: {
+        id: "callback-conflict",
+        data: "mc:approve:33333333-3333-4333-8333-333333333333:1",
+        from: { id: 1135608648 },
+        message: {
+          message_id: 61,
+          text: "proposal",
+          chat: { id: 1135608648, type: "private" },
+        },
+      },
+    }));
+
+    const responseBody = await response.json();
+    expect(response.status, JSON.stringify(responseBody)).toBe(200);
+    expect(responseBody).toMatchObject({ ok: true, decision: "approve", applied: true });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[1][1].p_scheduled_for).not.toBe(rpc.mock.calls[0][1].p_scheduled_for);
+  });
+
   it("keeps an existing operator draft approval callback working and synchronizes it", async () => {
     const maybeSingle = vi.fn()
       .mockResolvedValueOnce({
@@ -117,7 +269,11 @@ describe("Telegram webhook authorization boundary", () => {
           body: "Texto listo",
           status: "scheduled",
           version: 3,
-          metadata: {},
+          metadata: {
+            telegram_approval_messages: [
+              { chat_id: "1135608648", message_id: 13, draft_version: 3 },
+            ],
+          },
         },
         error: null,
       })
@@ -132,7 +288,7 @@ describe("Telegram webhook authorization boundary", () => {
           metadata: {
             telegram_decided_by: "telegram_operator",
             telegram_approval_messages: [
-              { chat_id: "1135608648", message_id: 13 },
+              { chat_id: "1135608648", message_id: 13, draft_version: 3 },
             ],
           },
         },
@@ -151,7 +307,7 @@ describe("Telegram webhook authorization boundary", () => {
       update_id: 4,
       callback_query: {
         id: "callback-3",
-        data: "mc:approve:11111111-1111-4111-8111-111111111111",
+        data: "mc:approve:11111111-1111-4111-8111-111111111111:3",
         from: { id: 1135608648 },
         message: {
           message_id: 13,
@@ -205,7 +361,11 @@ describe("Telegram webhook authorization boundary", () => {
           body: "Texto listo",
           status: "rejected",
           version: 2,
-          metadata: {},
+          metadata: {
+            telegram_approval_messages: [
+              { chat_id: "2233445566", message_id: 52, draft_version: 2 },
+            ],
+          },
         },
         error: null,
       })
@@ -220,8 +380,8 @@ describe("Telegram webhook authorization boundary", () => {
           metadata: {
             telegram_decided_by: "telegram_team:Ana",
             telegram_approval_messages: [
-              { chat_id: "1135608648", message_id: 51 },
-              { chat_id: "2233445566", message_id: 52 },
+              { chat_id: "1135608648", message_id: 51, draft_version: 2 },
+              { chat_id: "2233445566", message_id: 52, draft_version: 2 },
             ],
           },
         },
@@ -240,7 +400,7 @@ describe("Telegram webhook authorization boundary", () => {
       update_id: 5,
       callback_query: {
         id: "callback-4",
-        data: "mc:decline:22222222-2222-4222-8222-222222222222",
+        data: "mc:decline:22222222-2222-4222-8222-222222222222:2",
         from: { id: 2233445566 },
         message: {
           message_id: 52,

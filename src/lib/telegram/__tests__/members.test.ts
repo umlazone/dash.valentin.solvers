@@ -105,14 +105,15 @@ describe("Telegram team notification access", () => {
   it("normalizes and deduplicates stored Telegram proposal messages", () => {
     expect(normalizeTelegramApprovalMessages({
       telegram_approval_messages: [
-        { chat_id: "1135608648", message_id: 41, sent_at: "2026-07-14T23:00:00.000Z" },
-        { chat_id: MEMBER_CHAT_ID, message_id: 42, sent_at: "2026-07-14T23:00:01.000Z" },
-        { chat_id: MEMBER_CHAT_ID, message_id: 43, sent_at: "2026-07-14T23:00:02.000Z" },
-        { chat_id: "-1001", message_id: 44 },
+        { chat_id: "1135608648", message_id: 41, draft_version: 7, sent_at: "2026-07-14T23:00:00.000Z" },
+        { chat_id: MEMBER_CHAT_ID, message_id: 42, draft_version: 7, sent_at: "2026-07-14T23:00:01.000Z" },
+        { chat_id: MEMBER_CHAT_ID, message_id: 43, draft_version: 7, sent_at: "2026-07-14T23:00:02.000Z" },
+        { chat_id: "-1001", message_id: 44, draft_version: 7 },
+        { chat_id: "9988776655", message_id: 45 },
       ],
     })).toEqual([
-      { chatId: "1135608648", messageId: 41 },
-      { chatId: MEMBER_CHAT_ID, messageId: 43 },
+      { chatId: "1135608648", messageId: 41, draftVersion: 7 },
+      { chatId: MEMBER_CHAT_ID, messageId: 43, draftVersion: 7 },
     ]);
   });
 
