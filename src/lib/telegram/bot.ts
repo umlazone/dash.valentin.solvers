@@ -33,6 +33,26 @@ async function telegramApi(
   return payload.result || {};
 }
 
+export async function sendTextMessage(
+  config: TelegramBotConfig,
+  text: string,
+  options: { replyMarkup?: Record<string, unknown> } = {},
+  fetcher: Fetcher = fetch,
+) {
+  const result = await telegramApi(
+    config,
+    "sendMessage",
+    {
+      chat_id: config.chatId,
+      text: text.slice(0, 3900),
+      disable_web_page_preview: true,
+      ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+    },
+    fetcher,
+  );
+  return { messageId: result.message_id ?? null };
+}
+
 export async function sendDraftProposal(
   config: TelegramBotConfig,
   draft: ProposalMessageInput & { id: string },
