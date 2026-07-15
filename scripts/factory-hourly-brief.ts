@@ -22,7 +22,12 @@ import {
   isXaiCreditFailure,
   parseXurlSearchContext,
 } from "../src/lib/factory/research-runner";
-import { sendDraftProposal } from "../src/lib/telegram/bot";
+import { editProposalResult, sendDraftProposal } from "../src/lib/telegram/bot";
+import { formatProposalMessage } from "../src/lib/telegram/approval";
+import {
+  activeNotificationChatIds,
+  formatTelegramDecisionLine,
+} from "../src/lib/telegram/members";
 
 process.umask(0o077);
 
@@ -173,6 +178,13 @@ async function main() {
   if (!url || !key || !botToken || !chatId) throw new Error("hourly_brief_env_missing");
 
   const db = createClient(url, key, { auth: { persistSession: false } });
+  const { data: memberRows, error: memberError } = await db
+    .from("mc_system_settings")
+    .select("value")
+    .like("key", "telegram_notification_member:%");
+  if (memberError) throw new Error(`telegram_members_failed:${memberError.message}`);
+  const recipientChatIds = activeNotificationChatIds(memberRows || [], chatId);
+
   const { data: existing } = await db
     .from("mc_drafts")
     .select("title")
@@ -230,6 +242,7 @@ async function main() {
   renameSync(OUT_TMP, OUT);
 
   const created: Array<{ id: string; title: string }> = [];
+  const deliveryFailures: Array<{ draftId: string; chatId: string; error: string }> = [];
   for (const post of brief.posts) {
     const { data: draft, error } = await db
       .from("mc_drafts")
@@ -260,16 +273,52 @@ async function main() {
       body: post.body,
       author: "hourly_brief",
     });
-    await sendDraftProposal(
-      { botToken, chatId },
-      {
-        id: draft.id,
-        title: post.title,
-        body: post.body,
-        language: post.language,
-        angle: post.angle || brief.trends[0] || brief.summary,
-      },
-    );
+    const proposal = {
+      id: draft.id,
+      title: post.title,
+      body: post.body,
+      language: post.language,
+      angle: post.angle || brief.trends[0] || brief.summary,
+    };
+    const proposalText = formatProposalMessage(proposal);
+    for (const recipientChatId of recipientChatIds) {
+      try {
+        const sent = await sendDraftProposal(
+          { botToken, chatId: recipientChatId },
+          proposal,
+        );
+        if (!sent.messageId) throw new Error("telegram_message_id_missing");
+        const { data: registration, error: registerError } = await db.rpc(
+          "mc_register_telegram_approval_message",
+          {
+            p_draft_id: draft.id,
+            p_chat_id: recipientChatId,
+            p_message_id: sent.messageId,
+            p_now: new Date().toISOString(),
+          },
+        );
+        if (registerError) throw new Error(`telegram_message_register_failed:${registerError.message}`);
+        const registered = registration && typeof registration === "object"
+          ? registration as Record<string, unknown>
+          : {};
+        if (["approve", "decline"].includes(String(registered.decision))) {
+          await editProposalResult(
+            { botToken, chatId: recipientChatId },
+            sent.messageId,
+            proposalText,
+            formatTelegramDecisionLine({
+              decision: registered.decision as "approve" | "decline",
+              scheduledFor: typeof registered.scheduled_for === "string" ? registered.scheduled_for : null,
+              actor: registered.decided_by,
+            }),
+          );
+        }
+      } catch (deliveryError) {
+        const message = deliveryError instanceof Error ? deliveryError.message : "telegram_delivery_failed";
+        deliveryFailures.push({ draftId: draft.id, chatId: recipientChatId, error: message.slice(0, 240) });
+        if (recipientChatId === chatId) throw deliveryError;
+      }
+    }
     created.push({ id: draft.id, title: draft.title });
   }
 
@@ -282,6 +331,8 @@ async function main() {
       posts: created.length,
       trends: brief.trends,
       draft_ids: created.map((c) => c.id),
+      recipient_count: recipientChatIds.length,
+      delivery_failures: deliveryFailures,
       backend,
     },
   });
@@ -291,6 +342,8 @@ async function main() {
       ok: true,
       posts: created.length,
       draftIds: created.map((c) => c.id),
+      recipients: recipientChatIds.length,
+      deliveryFailures: deliveryFailures.length,
       trends: brief.trends,
       backend,
     }),

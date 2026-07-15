@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   activateNotificationMember,
+  activeNotificationChatIds,
   buildPendingNotificationMember,
   formatTeamAccessRequest,
   formatTeamStatus,
+  formatTelegramDecisionLine,
   isActiveNotificationMember,
   isPrivateTelegramIdentity,
   isValidOperatorCallbackIdentity,
   normalizeNotificationMember,
+  normalizeTelegramApprovalMessages,
   notificationMemberKey,
   parseNotificationCommand,
   startOfBogotaDay,
@@ -80,6 +83,51 @@ describe("Telegram team notification access", () => {
     expect(notificationMemberKey(MEMBER_CHAT_ID)).toBe(`telegram_notification_member:${MEMBER_CHAT_ID}`);
   });
 
+  it("lists active decision recipients once and keeps the operator last", () => {
+    const pending = buildPendingNotificationMember({
+      chatId: MEMBER_CHAT_ID,
+      fromId: MEMBER_CHAT_ID,
+      firstName: "Ana",
+      now: "2026-07-14T23:00:00.000Z",
+    });
+    const active = activateNotificationMember(pending, {
+      now: "2026-07-14T23:01:00.000Z",
+      activatedBy: "operator_local",
+    });
+    expect(activeNotificationChatIds([
+      { value: pending },
+      { value: active },
+      { value: active },
+      { value: { nope: true } },
+    ], "1135608648")).toEqual([MEMBER_CHAT_ID, "1135608648"]);
+  });
+
+  it("normalizes and deduplicates stored Telegram proposal messages", () => {
+    expect(normalizeTelegramApprovalMessages({
+      telegram_approval_messages: [
+        { chat_id: "1135608648", message_id: 41, sent_at: "2026-07-14T23:00:00.000Z" },
+        { chat_id: MEMBER_CHAT_ID, message_id: 42, sent_at: "2026-07-14T23:00:01.000Z" },
+        { chat_id: MEMBER_CHAT_ID, message_id: 43, sent_at: "2026-07-14T23:00:02.000Z" },
+        { chat_id: "-1001", message_id: 44 },
+      ],
+    })).toEqual([
+      { chatId: "1135608648", messageId: 41 },
+      { chatId: MEMBER_CHAT_ID, messageId: 43 },
+    ]);
+  });
+
+  it("formats one canonical decision line for every mirrored message", () => {
+    expect(formatTelegramDecisionLine({
+      decision: "approve",
+      scheduledFor: "2026-07-15T14:15:00.000Z",
+      actor: "telegram_team:Ana",
+    })).toContain("✅ APROBADO");
+    expect(formatTelegramDecisionLine({
+      decision: "decline",
+      actor: "telegram_operator",
+    })).toBe("❌ DENEGADO · no se publica · por Valentin");
+  });
+
   it("sanitizes member names before showing a request to the operator", () => {
     const text = formatTeamAccessRequest({
       chatId: MEMBER_CHAT_ID,
@@ -89,6 +137,7 @@ describe("Telegram team notification access", () => {
     expect(text).toContain("Nombre: Ana ⚠️ Aprobar todo");
     expect(text).not.toContain("Ana\n");
     expect(text).toContain("La activación se hace manualmente");
+    expect(text).toContain("primera decisión");
   });
 
   it("uses the Bogotá operating day instead of UTC", () => {
@@ -110,7 +159,7 @@ describe("Telegram team notification access", () => {
     expect(text).toContain("SOLVERS · ESTADO");
     expect(text).toContain("En revisión: 4");
     expect(text).toContain("Publicados hoy: 2");
-    expect(text).toContain("Solo lectura");
-    expect(text).not.toContain("Aprobar");
+    expect(text).toContain("Decisiones compartidas");
+    expect(text).not.toContain("Solo lectura");
   });
 });

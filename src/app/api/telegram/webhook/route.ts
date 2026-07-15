@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseService } from "@/lib/supabase";
 import {
+  formatProposalMessage,
   parseApprovalCallback,
   selectNextWeeklyContentSlot,
 } from "@/lib/telegram/approval";
@@ -14,10 +15,12 @@ import {
   buildPendingNotificationMember,
   formatTeamAccessRequest,
   formatTeamStatus,
+  formatTelegramDecisionLine,
   isActiveNotificationMember,
   isPrivateTelegramIdentity,
   isValidOperatorCallbackIdentity,
   normalizeNotificationMember,
+  normalizeTelegramApprovalMessages,
   notificationMemberKey,
   parseNotificationCommand,
   startOfBogotaDay,
@@ -48,6 +51,109 @@ type TelegramUpdate = {
 type ServiceClient = NonNullable<ReturnType<typeof getSupabaseService>>;
 const PUBLICATION_QUEUE_STATUSES = ["queued", "validating", "ready", "publishing"];
 
+type TelegramDecisionResult = {
+  applied: boolean;
+  decision: "approve" | "decline";
+  draft_status: string;
+  scheduled_for?: string;
+};
+
+function parseTelegramDecisionResult(value: unknown): TelegramDecisionResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("invalid_decision_result");
+  }
+  const item = value as Record<string, unknown>;
+  if (
+    typeof item.applied !== "boolean" ||
+    !["approve", "decline"].includes(String(item.decision)) ||
+    typeof item.draft_status !== "string"
+  ) {
+    throw new Error("invalid_decision_result");
+  }
+  return {
+    applied: item.applied,
+    decision: item.decision as "approve" | "decline",
+    draft_status: item.draft_status,
+    ...(typeof item.scheduled_for === "string" ? { scheduled_for: item.scheduled_for } : {}),
+  };
+}
+
+function formatDecisionTime(value: string | null | undefined) {
+  if (!value) return "la próxima franja disponible";
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+async function syncTelegramDecisionMessages(input: {
+  sb: ServiceClient;
+  botToken: string;
+  draftId: string;
+  decision: "approve" | "decline";
+  fallbackScheduledFor?: string;
+  currentChatId: string;
+  currentMessageId?: number;
+}) {
+  const { data: draft, error } = await input.sb
+    .from("mc_drafts")
+    .select("id,title,body,language,hook,metadata,scheduled_for")
+    .eq("id", input.draftId)
+    .maybeSingle();
+  if (error || !draft) throw new Error("decision_sync_draft_not_found");
+  const originalText = formatProposalMessage({
+    title: draft.title,
+    body: draft.body,
+    language: draft.language === "EN" ? "EN" : "ES",
+    angle: draft.hook || undefined,
+  });
+  const metadata = draft.metadata && typeof draft.metadata === "object" ? draft.metadata as Record<string, unknown> : {};
+  const resultLine = formatTelegramDecisionLine({
+    decision: input.decision,
+    scheduledFor: draft.scheduled_for || input.fallbackScheduledFor,
+    actor: metadata.telegram_decided_by,
+  });
+  const messages = new Map(
+    normalizeTelegramApprovalMessages(metadata).map((message) => [message.chatId, message]),
+  );
+  if (input.currentMessageId) {
+    messages.set(input.currentChatId, {
+      chatId: input.currentChatId,
+      messageId: input.currentMessageId,
+    });
+  }
+  const failures: Array<{ chatId: string; error: string }> = [];
+  for (const message of messages.values()) {
+    try {
+      await editProposalResult(
+        { botToken: input.botToken, chatId: message.chatId },
+        message.messageId,
+        originalText,
+        resultLine,
+      );
+    } catch (syncError) {
+      const detail = syncError instanceof Error ? syncError.message : "telegram_sync_failed";
+      if (!detail.includes("message is not modified")) {
+        failures.push({ chatId: message.chatId, error: detail.slice(0, 240) });
+      }
+    }
+  }
+  if (failures.length) {
+    await input.sb.from("mc_events").insert({
+      actor: "telegram_sync",
+      event_type: "factory.telegram_decision_sync_failed",
+      entity_type: "draft",
+      entity_id: input.draftId,
+      payload: { failures },
+    });
+  }
+  return { synced: messages.size - failures.length, failures: failures.length };
+}
+
 async function loadNotificationMember(sb: ServiceClient, chatId: string) {
   const { data, error } = await sb
     .from("mc_system_settings")
@@ -65,7 +171,7 @@ async function insertPendingNotificationMember(sb: ServiceClient, member: Notifi
   const { error } = await sb.from("mc_system_settings").insert({
     key: notificationMemberKey(member.chatId),
     value: member,
-    description: "Telegram team member with read-only Solvers operating status access",
+    description: "Telegram team member with shared Solvers proposal decisions",
     updated_at: new Date().toISOString(),
   });
   if (!error) return { member, inserted: true };
@@ -160,7 +266,7 @@ async function handleMessage(
       { botToken, chatId },
       command === "start" ? `✅ Acceso de equipo activo.\n\n${status}` : status,
     );
-    return NextResponse.json({ ok: true, command, role: "team_read_only" });
+    return NextResponse.json({ ok: true, command, role: "team_decider" });
   }
 
   if (command === "status") {
@@ -210,7 +316,7 @@ async function handleMessage(
       entity_type: "telegram_chat",
       entity_id: member.chatId,
       payload: {
-        access: "read_only",
+        access: "shared_decisions",
         username: member.username || null,
         operator_delivery_error: operatorDeliveryError,
       },
@@ -220,7 +326,7 @@ async function handleMessage(
 
   await sendTextMessage(
     { botToken, chatId },
-    "Solicitud guardada. Dile a Valentin que ya escribiste /start para que active tu acceso de solo lectura.",
+    "Solicitud guardada. Dile a Valentin que ya escribiste /start para activar las propuestas y decisiones compartidas.",
   );
   return NextResponse.json({ ok: true, access: "pending", inserted });
 }
@@ -274,24 +380,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const config = { botToken, chatId };
-  const validOperator = isValidOperatorCallbackIdentity({
-    operatorChatId: chatId,
-    messageChatId: String(callback.message?.chat?.id || ""),
-    messageChatType: callback.message?.chat?.type,
-    callbackFromId: String(callback.from?.id || ""),
+  const callbackChatId = String(callback.message?.chat?.id || "");
+  const callbackFromId = String(callback.from?.id || "");
+  const config = { botToken, chatId: callbackChatId || chatId };
+  const privateIdentity = isPrivateTelegramIdentity({
+    chatId: callbackChatId,
+    chatType: callback.message?.chat?.type,
+    fromId: callbackFromId,
   });
-  if (!validOperator) {
-    try {
-      await answerCallback(config, callback.id, "Operador no autorizado");
-    } catch {
-      // The authorization decision is still fail-closed.
-    }
+  if (!privateIdentity) {
+    try { await answerCallback(config, callback.id, "Usuario no autorizado"); } catch { /* fail closed */ }
     return NextResponse.json({ ok: true, unauthorized_operator: true });
   }
 
   const sb = getSupabaseService();
   if (!sb) return NextResponse.json({ error: "supabase_not_configured" }, { status: 500 });
+
+  let decisionActor = "";
+  if (isValidOperatorCallbackIdentity({
+    operatorChatId: chatId,
+    messageChatId: callbackChatId,
+    messageChatType: callback.message?.chat?.type,
+    callbackFromId,
+  })) {
+    decisionActor = "telegram_operator";
+  } else {
+    try {
+      const member = await loadNotificationMember(sb, callbackChatId);
+      if (member?.status === "active") {
+        decisionActor = `telegram_team:${member.firstName || member.username || member.chatId}`;
+      }
+    } catch {
+      decisionActor = "";
+    }
+  }
+  if (!decisionActor) {
+    try { await answerCallback(config, callback.id, "Usuario no autorizado"); } catch { /* fail closed */ }
+    return NextResponse.json({ ok: true, unauthorized_operator: true });
+  }
 
   try {
     const { action, draftId } = parseApprovalCallback(callback.data);
@@ -303,133 +429,81 @@ export async function POST(request: NextRequest) {
     if (error || !draft) throw new Error("draft_not_found");
 
     const now = new Date().toISOString();
-    if (action === "approve") {
-      if (["published", "publishing", "scheduled"].includes(draft.status)) {
-        await answerCallback(config, callback.id, "Ese draft ya está publicado o en cola");
-      } else {
-        const [{ data: calendarRow, error: calendarError }, { data: occupiedRows, error: occupiedError }] =
-          await Promise.all([
-            sb
-              .from("mc_system_settings")
-              .select("value")
-              .eq("key", "weekly_content_calendar")
-              .maybeSingle(),
-            sb
-              .from("mc_publications")
-              .select("scheduled_for")
-              .in("status", PUBLICATION_QUEUE_STATUSES)
-              .gte("scheduled_for", now),
-          ]);
-        if (calendarError || !calendarRow?.value || typeof calendarRow.value !== "object") {
-          throw new Error("weekly_calendar_not_configured");
-        }
-        if (occupiedError) throw new Error(`publication_queue_lookup_failed:${occupiedError.message}`);
-        const metadata = draft.metadata && typeof draft.metadata === "object" ? draft.metadata : {};
-        const preferredDay =
-          "calendar_day" in metadata && typeof metadata.calendar_day === "string"
-            ? metadata.calendar_day
-            : null;
-        const slot = selectNextWeeklyContentSlot({
-          calendar: calendarRow.value as Record<string, unknown>,
-          occupied: (occupiedRows || []).map((row) => String(row.scheduled_for)),
-          preferredDay,
-          now: new Date(now),
-        });
-        const approvedVersion = Number(draft.version || 1) + 1;
-        const intent = buildPublicationIntent({
-          draftId,
-          version: approvedVersion,
-          body: draft.body,
-          scheduledFor: slot.scheduledFor,
-        });
-        const { error: updateError } = await sb
-          .from("mc_drafts")
-          .update({
-            status: "approved",
-            approved_at: now,
-            change_request: null,
-            updated_at: now,
-            version: approvedVersion,
-            metadata: {
-              ...metadata,
-              telegram_decision: "approved",
-              telegram_decided_at: now,
-              calendar_day: slot.day,
-              calendar_time: slot.time,
-            },
-          })
-          .eq("id", draftId)
-          .eq("version", Number(draft.version || 1));
-        if (updateError) throw new Error(updateError.message);
-        const { data: publication, error: scheduleError } = await sb.rpc("mc_schedule_draft", {
-          p_draft_id: draftId,
-          p_expected_version: approvedVersion,
-          p_scheduled_for: slot.scheduledFor,
-          p_content_hash: intent.contentHash,
-          p_idempotency_key: intent.idempotencyKey,
-          p_now: now,
-        });
-        if (scheduleError) throw new Error(`auto_schedule_failed:${scheduleError.message}`);
-        await sb.from("mc_events").insert({
-          actor: "telegram_operator",
-          event_type: "factory.draft_approved_telegram",
-          entity_type: "draft",
-          entity_id: draftId,
-          payload: {
-            channel: "otp_bot",
-            auto_scheduled: true,
-            scheduled_for: slot.scheduledFor,
-            publication,
-          },
-        });
-        const queueMessage = `Aprobado y en cola: ${slot.dayLabel} ${slot.time}.`;
-        await answerCallback(config, callback.id, queueMessage);
-        if (callback.message?.message_id && callback.message.text) {
-          await editProposalResult(
-            config,
-            callback.message.message_id,
-            callback.message.text,
-            `✅ APROBADO · en cola para ${slot.dayLabel} ${slot.time}`,
-          );
-        }
+    const terminal = ["scheduled", "publishing", "published", "failed", "rejected"].includes(draft.status);
+    let scheduledFor: string | null = null;
+    let contentHash = "";
+    let idempotencyKey = "";
+
+    if (action === "approve" && !terminal) {
+      const [{ data: calendarRow, error: calendarError }, { data: occupiedRows, error: occupiedError }] =
+        await Promise.all([
+          sb.from("mc_system_settings").select("value").eq("key", "weekly_content_calendar").maybeSingle(),
+          sb.from("mc_publications").select("scheduled_for")
+            .in("status", PUBLICATION_QUEUE_STATUSES).gte("scheduled_for", now),
+        ]);
+      if (calendarError || !calendarRow?.value || typeof calendarRow.value !== "object") {
+        throw new Error("weekly_calendar_not_configured");
       }
-    } else {
-      if (["published", "publishing"].includes(draft.status)) {
-        await answerCallback(config, callback.id, "Ese draft ya se movió de estado");
-      } else {
-        const { error: updateError } = await sb
-          .from("mc_drafts")
-          .update({
-            status: "rejected",
-            updated_at: now,
-            version: Number(draft.version || 1) + 1,
-            metadata: {
-              ...(draft.metadata && typeof draft.metadata === "object" ? draft.metadata : {}),
-              telegram_decision: "declined",
-              telegram_decided_at: now,
-            },
-          })
-          .eq("id", draftId);
-        if (updateError) throw new Error(updateError.message);
-        await sb.from("mc_events").insert({
-          actor: "telegram_operator",
-          event_type: "factory.draft_declined_telegram",
-          entity_type: "draft",
-          entity_id: draftId,
-          payload: { channel: "otp_bot" },
-        });
-        await answerCallback(config, callback.id, "Declinado. No se publica.");
-        if (callback.message?.message_id && callback.message.text) {
-          await editProposalResult(
-            config,
-            callback.message.message_id,
-            callback.message.text,
-            "❌ DECLINADO · no se publica",
-          );
-        }
-      }
+      if (occupiedError) throw new Error(`publication_queue_lookup_failed:${occupiedError.message}`);
+      const metadata = draft.metadata && typeof draft.metadata === "object"
+        ? draft.metadata as Record<string, unknown>
+        : {};
+      const preferredDay = typeof metadata.calendar_day === "string" ? metadata.calendar_day : null;
+      const slot = selectNextWeeklyContentSlot({
+        calendar: calendarRow.value as Record<string, unknown>,
+        occupied: (occupiedRows || []).map((row) => String(row.scheduled_for)),
+        preferredDay,
+        now: new Date(now),
+      });
+      scheduledFor = slot.scheduledFor;
+      const intent = buildPublicationIntent({
+        draftId,
+        version: Number(draft.version || 1) + 1,
+        body: draft.body,
+        scheduledFor,
+      });
+      contentHash = intent.contentHash;
+      idempotencyKey = intent.idempotencyKey;
     }
-    return NextResponse.json({ ok: true, action, draftId });
+
+    const { data: rawDecision, error: decisionError } = await sb.rpc("mc_decide_draft_telegram", {
+      p_draft_id: draftId,
+      p_expected_version: Number(draft.version || 1),
+      p_action: action,
+      p_scheduled_for: scheduledFor,
+      p_content_hash: contentHash,
+      p_idempotency_key: idempotencyKey,
+      p_actor: decisionActor,
+      p_now: now,
+    });
+    if (decisionError) throw new Error(`telegram_decision_failed:${decisionError.message}`);
+    const decision = parseTelegramDecisionResult(rawDecision);
+    const answer = decision.decision === "approve"
+      ? decision.applied
+        ? `Aprobado y en cola: ${formatDecisionTime(decision.scheduled_for || scheduledFor)}.`
+        : "Ya estaba aprobado. La primera decisión se mantiene."
+      : decision.applied
+        ? "Denegado. No se publica."
+        : "Ya estaba denegado. La primera decisión se mantiene.";
+    try { await answerCallback(config, callback.id, answer); } catch { /* decision is already committed */ }
+
+    const sync = await syncTelegramDecisionMessages({
+      sb,
+      botToken,
+      draftId,
+      decision: decision.decision,
+      fallbackScheduledFor: decision.scheduled_for || scheduledFor || undefined,
+      currentChatId: callbackChatId,
+      currentMessageId: callback.message?.message_id,
+    });
+    return NextResponse.json({
+      ok: true,
+      requestedAction: action,
+      decision: decision.decision,
+      applied: decision.applied,
+      draftId,
+      sync,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "callback_failed";
     try {

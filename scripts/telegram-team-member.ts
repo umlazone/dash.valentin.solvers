@@ -110,14 +110,14 @@ async function main() {
       event_type: "factory.telegram_team_access_activated_local",
       entity_type: "telegram_chat",
       entity_id: chatId,
-      payload: { access: "read_only" },
+      payload: { access: "shared_decisions" },
     });
     if (error) throw new Error(`team_member_event_failed:${error.message}`);
   }
 
   await sendTextMessage(
     { botToken, chatId },
-    "✅ Tu acceso de equipo a Solvers Notifications está activo. Usa /status para ver el estado operativo. Es un acceso de solo lectura.",
+    "✅ Tu acceso de equipo está activo. Recibirás las mismas propuestas con Aprobar/Denegar. La primera decisión válida se sincroniza en ambos chats. Usa /status para ver el estado operativo.",
   );
   console.log(JSON.stringify({ ok: true, chatId, status: "active" }));
 }

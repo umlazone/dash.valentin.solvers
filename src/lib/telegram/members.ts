@@ -141,6 +141,69 @@ export function isActiveNotificationMember(value: unknown, chatId: string) {
   return Boolean(member && member.chatId === chatId && member.status === "active");
 }
 
+export function activeNotificationChatIds(
+  rows: Array<{ value: unknown }>,
+  operatorChatId: string,
+) {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const member = normalizeNotificationMember(row.value);
+    if (member?.status === "active" && member.chatId !== operatorChatId) {
+      ids.add(member.chatId);
+    }
+  }
+  ids.add(operatorChatId);
+  return [...ids];
+}
+
+export type TelegramApprovalMessage = {
+  chatId: string;
+  messageId: number;
+};
+
+export function normalizeTelegramApprovalMessages(metadata: unknown): TelegramApprovalMessage[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const raw = (metadata as Record<string, unknown>).telegram_approval_messages;
+  if (!Array.isArray(raw)) return [];
+  const messages = new Map<string, TelegramApprovalMessage>();
+  for (const value of raw) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const item = value as Record<string, unknown>;
+    const chatId = cleanText(item.chat_id, 20);
+    const messageId = Number(item.message_id);
+    if (!PRIVATE_CHAT_ID_RE.test(chatId) || !Number.isSafeInteger(messageId) || messageId <= 0) continue;
+    messages.set(chatId, { chatId, messageId });
+  }
+  return [...messages.values()];
+}
+
+export function formatTelegramDecisionLine(input: {
+  decision: "approve" | "decline";
+  scheduledFor?: string | null;
+  actor?: unknown;
+}) {
+  const rawActor = cleanText(input.actor, 120);
+  const actor = rawActor === "telegram_operator"
+    ? "Valentin"
+    : rawActor.startsWith("telegram_team:")
+      ? rawActor.slice("telegram_team:".length) || "equipo"
+      : "equipo";
+  if (input.decision === "decline") {
+    return `❌ DENEGADO · no se publica · por ${actor}`;
+  }
+  const schedule = input.scheduledFor
+    ? new Intl.DateTimeFormat("es-CO", {
+        timeZone: "America/Bogota",
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(input.scheduledFor))
+    : "la próxima franja disponible";
+  return `✅ APROBADO · ${schedule} · por ${actor}`;
+}
+
 export function formatTeamAccessRequest(input: {
   chatId: string;
   firstName?: string;
@@ -155,8 +218,9 @@ export function formatTeamAccessRequest(input: {
     username ? `Usuario: @${username}` : null,
     `Chat: ${input.chatId}`,
     "",
-    "Acceso solicitado: estado operativo de solo lectura.",
-    "La activación se hace manualmente y no incluye OTP ni permisos para aprobar o publicar.",
+    "Acceso solicitado: mismas propuestas y controles compartidos de Aprobar/Denegar.",
+    "La activación se hace manualmente. La primera decisión válida queda definitiva para ambos chats.",
+    "No incluye OTP ni acceso al panel.",
   ].filter(Boolean).join("\n");
 }
 
@@ -202,6 +266,6 @@ export function formatTeamStatus(input: {
     `Fallidos: ${input.publicationsFailed}`,
     `Próximo: ${next}`,
     "",
-    "Solo lectura · Las aprobaciones y publicaciones siguen en manos de Valentin.",
+    "Decisiones compartidas · La primera aprobación o denegación válida queda definitiva para ambos chats.",
   ].join("\n");
 }
