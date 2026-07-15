@@ -185,6 +185,15 @@ export function normalizeTelegramApprovalMessages(metadata: unknown): TelegramAp
   return [...messages.values()];
 }
 
+export function missingTelegramApprovalChatIds(
+  messages: TelegramApprovalMessage[],
+  recipientChatIds: string[],
+) {
+  const mapped = new Set(messages.map((message) => message.chatId));
+  return [...new Set(recipientChatIds)]
+    .filter((chatId) => PRIVATE_CHAT_ID_RE.test(chatId) && !mapped.has(chatId));
+}
+
 export function formatTelegramDecisionLine(input: {
   decision: "approve" | "decline";
   scheduledFor?: string | null;

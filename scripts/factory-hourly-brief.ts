@@ -31,6 +31,7 @@ import { formatProposalMessage } from "../src/lib/telegram/approval";
 import {
   activeNotificationChatIds,
   formatTelegramDecisionLine,
+  missingTelegramApprovalChatIds,
   normalizeTelegramApprovalMessages,
 } from "../src/lib/telegram/members";
 
@@ -326,6 +327,22 @@ async function reconcileTelegramProposals(input: {
               error: syncError instanceof Error ? syncError.message.slice(0, 240) : "sync_failed",
             });
           }
+        }
+      }
+      for (const recipientChatId of missingTelegramApprovalChatIds(mappings, input.recipientChatIds)) {
+        try {
+          await sendAndRegisterProposalCopy({
+            db: input.db,
+            botToken: input.botToken,
+            chatId: recipientChatId,
+            proposal,
+          });
+        } catch (deliveryError) {
+          failures.push({
+            draftId: row.id,
+            chatId: recipientChatId,
+            error: deliveryError instanceof Error ? deliveryError.message.slice(0, 240) : "terminal_delivery_failed",
+          });
         }
       }
       continue;

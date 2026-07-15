@@ -11,6 +11,7 @@ import {
   isValidOperatorCallbackIdentity,
   normalizeNotificationMember,
   normalizeTelegramApprovalMessages,
+  missingTelegramApprovalChatIds,
   notificationMemberKey,
   parseNotificationCommand,
   startOfBogotaDay,
@@ -115,6 +116,15 @@ describe("Telegram team notification access", () => {
       { chatId: "1135608648", messageId: 41, draftVersion: 7 },
       { chatId: MEMBER_CHAT_ID, messageId: 43, draftVersion: 7 },
     ]);
+  });
+
+  it("finds active recipients missing a terminal proposal copy", () => {
+    expect(missingTelegramApprovalChatIds(
+      [
+        { chatId: "1135608648", messageId: 41, draftVersion: 2 },
+      ],
+      ["2233445566", "1135608648", "2233445566"],
+    )).toEqual(["2233445566"]);
   });
 
   it("formats one canonical decision line for every mirrored message", () => {
