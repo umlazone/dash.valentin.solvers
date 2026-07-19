@@ -39,6 +39,55 @@ describe("Grok research contract", () => {
     expect(parsed.drafts).toHaveLength(1);
   });
 
+  it("keeps only a bounded creator formula instead of arbitrary model metadata", () => {
+    const parsed = parseResearchPayload({
+      summary: "Una fórmula útil sin copiar el post.",
+      queries: ["from:AlexFinn agents"],
+      signals: [{
+        sourceUrl: "https://x.com/AlexFinn/status/123",
+        sourceAuthor: "AlexFinn",
+        sourceText: "A grounded creator post.",
+        mechanism: "Autoridad y prueba",
+        solversAngle: "Aplicar el mecanismo a una experiencia propia.",
+        score: 88,
+        metadata: {
+          sourceKind: "registered_creator",
+          creatorFormula: {
+            hookType: "  Autoridad transferida  ",
+            openingMove: "Nombre reconocido + novedad concreta",
+            tension: "Promesa grande frente a trabajo operativo real",
+            structure: "autoridad → promesa → tres capacidades → guardar",
+            proofDevice: "Duración exacta del video y fuente identificable",
+            payoff: "El lector entiende qué aprenderá",
+            endingType: "CTA de guardar",
+            whyItWorks: "Reduce incertidumbre antes de pedir atención",
+            reuseRule: "Usar una fuente real y traducirla a una lección propia",
+            antiCopyBoundary: "No repetir apertura, tríada ni CTA literal",
+            unknown: "drop me",
+          },
+          promptInjection: "drop me too",
+        },
+      }],
+      drafts: [],
+    });
+
+    expect(parsed.signals[0].metadata).toEqual({
+      sourceKind: "registered_creator",
+      creatorFormula: {
+        hookType: "Autoridad transferida",
+        openingMove: "Nombre reconocido + novedad concreta",
+        tension: "Promesa grande frente a trabajo operativo real",
+        structure: "autoridad → promesa → tres capacidades → guardar",
+        proofDevice: "Duración exacta del video y fuente identificable",
+        payoff: "El lector entiende qué aprenderá",
+        endingType: "CTA de guardar",
+        whyItWorks: "Reduce incertidumbre antes de pedir atención",
+        reuseRule: "Usar una fuente real y traducirla a una lección propia",
+        antiCopyBoundary: "No repetir apertura, tríada ni CTA literal",
+      },
+    });
+  });
+
   it("enforces canonical X status identity and an approved author allowlist", () => {
     const base = {
       summary: "Research seguro",

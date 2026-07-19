@@ -14,6 +14,7 @@ import {
   isXaiCreditFailure,
   parseCreatorHandles,
   parseXurlSearchContext,
+  prioritizeApprovedHandles,
 } from "../src/lib/factory/research-runner";
 
 process.umask(0o077);
@@ -81,10 +82,8 @@ function main() {
   ], { cwd: APP, stdio: ["ignore", "ignore", "pipe"], timeout: 30_000 });
 
   const creatorsYaml = readTrusted(resolve(ROOT, "scouts/creators.yaml"));
-  const allowedHandles = Array.from(new Set([
-    ...STATIC_ALLOWED_HANDLES,
-    ...parseCreatorHandles(creatorsYaml),
-  ]));
+  const creatorHandles = parseCreatorHandles(creatorsYaml);
+  const allowedHandles = prioritizeApprovedHandles(STATIC_ALLOWED_HANDLES, creatorHandles);
   const brandContext = [
     ["VOICE", readTrusted(resolve(ROOT, "brand/voice.md"))],
     ["DO NOT SAY", readTrusted(resolve(ROOT, "brand/do-not-say.md"))],
@@ -96,6 +95,7 @@ function main() {
   const prompt = buildResearchPrompt({
     ...dateWindow(),
     allowedHandles,
+    creatorHandles,
     brandContext,
     factoryContext,
   });

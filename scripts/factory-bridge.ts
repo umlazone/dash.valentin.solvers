@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { buildEditorialLearningSnapshot } from "../src/lib/factory/editorial-learning";
 import { parseResearchPayload } from "../src/lib/factory/research-contract";
 import { signalFingerprint } from "../src/lib/factory/workflow";
 
@@ -50,20 +51,28 @@ async function exportContext() {
   const output = argument("--output");
   if (!output) throw new Error("context_output_required");
   const db = client();
-  const [signals, captures, drafts, settings] = await Promise.all([
-    db.from("mc_signals").select("fingerprint,source_url,mechanism,solvers_angle,status,score,discovered_at").order("discovered_at", { ascending: false }).limit(100),
+  const [signals, captures, drafts, publications, metrics, settings] = await Promise.all([
+    db.from("mc_signals").select("fingerprint,source_url,source_author,source_text,mechanism,evidence,solvers_angle,content_format,language,status,score,metadata,discovered_at").order("discovered_at", { ascending: false }).limit(100),
     db.from("mc_captures").select("id,title,raw_text,capture_type,area,status,captured_at").in("status", ["new", "triaged"]).order("priority", { ascending: false }).limit(30),
-    db.from("mc_drafts").select("id,title,body,status,area,metadata,updated_at").order("updated_at", { ascending: false }).limit(50),
+    db.from("mc_drafts").select("id,title,hook,body,status,content_type,change_request,quality_checks,area,metadata,approved_at,published_at,updated_at").order("updated_at", { ascending: false }).limit(80),
+    db.from("mc_publications").select("id,draft_id,status,content_snapshot,published_at,metadata").order("updated_at", { ascending: false }).limit(60),
+    db.from("mc_post_metrics").select("publication_id,window_label,impressions,likes,replies,reposts,quotes,bookmarks,profile_clicks,url_clicks,captured_at").order("captured_at", { ascending: false }).limit(120),
     db.from("mc_system_settings").select("key,value"),
   ]);
-  for (const result of [signals, captures, drafts, settings]) {
+  for (const result of [signals, captures, drafts, publications, metrics, settings]) {
     if (result.error) throw new Error(`context_query_failed:${result.error.message}`);
   }
+  const editorialLearning = buildEditorialLearningSnapshot({
+    drafts: drafts.data || [],
+    publications: publications.data || [],
+    metrics: metrics.data || [],
+  });
   const payload = {
     generatedAt: new Date().toISOString(),
     existingSignals: signals.data || [],
     openCaptures: captures.data || [],
     existingDrafts: drafts.data || [],
+    editorialLearning,
     settings: Object.fromEntries((settings.data || []).map((row) => [row.key, row.value])),
   };
   writeFileSync(resolve(output), JSON.stringify(payload, null, 2), { mode: 0o600 });
@@ -71,6 +80,9 @@ async function exportContext() {
     signals: payload.existingSignals.length,
     captures: payload.openCaptures.length,
     drafts: payload.existingDrafts.length,
+    acceptedLearnings: payload.editorialLearning.accepted.length,
+    correctionLearnings: payload.editorialLearning.rejectedOrRevised.length,
+    publishedOutcomes: payload.editorialLearning.publishedOutcomes.length,
   } }));
 }
 

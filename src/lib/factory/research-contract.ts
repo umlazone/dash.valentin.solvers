@@ -1,4 +1,17 @@
 const formats = new Set(["post", "thread", "reply", "quote", "case", "playbook", "question"]);
+const sourceKinds = new Set(["registered_creator", "official", "latam", "operator", "other"]);
+const creatorFormulaFields = [
+  ["hookType", 120],
+  ["openingMove", 240],
+  ["tension", 240],
+  ["structure", 300],
+  ["proofDevice", 240],
+  ["payoff", 240],
+  ["endingType", 120],
+  ["whyItWorks", 300],
+  ["reuseRule", 300],
+  ["antiCopyBoundary", 300],
+] as const;
 
 type ResearchOptions = {
   allowedHandles?: ReadonlySet<string>;
@@ -6,6 +19,26 @@ type ResearchOptions = {
 
 function text(value: unknown, max: number) {
   return String(value || "").trim().slice(0, max);
+}
+
+function signalMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const metadata: Record<string, unknown> = {};
+  const sourceKind = text(input.sourceKind, 40);
+  if (sourceKinds.has(sourceKind)) metadata.sourceKind = sourceKind;
+
+  if (input.creatorFormula && typeof input.creatorFormula === "object" && !Array.isArray(input.creatorFormula)) {
+    const raw = input.creatorFormula as Record<string, unknown>;
+    const creatorFormula = Object.fromEntries(
+      creatorFormulaFields.flatMap(([field, max]) => {
+        const value = text(raw[field], max);
+        return value ? [[field, value]] : [];
+      }),
+    );
+    if (Object.keys(creatorFormula).length) metadata.creatorFormula = creatorFormula;
+  }
+  return metadata;
 }
 
 function xIdentity(value: unknown) {
@@ -67,10 +100,7 @@ export function parseResearchPayload(value: unknown, options: ResearchOptions = 
       contentFormat: formats.has(requestedFormat) ? requestedFormat : "post",
       language: row.language === "EN" ? ("EN" as const) : ("ES" as const),
       score: Math.max(0, Math.min(100, Math.round(Number(row.score ?? 50) || 50))),
-      metadata:
-        row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
-          ? row.metadata
-          : {},
+      metadata: signalMetadata(row.metadata),
     };
   });
   const sourceUrls = new Set(signals.map((signal) => signal.sourceUrl));
